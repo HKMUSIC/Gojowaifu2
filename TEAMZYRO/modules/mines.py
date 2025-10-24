@@ -86,13 +86,13 @@ async def mines_menu(client, message):
     })
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("3 x 3", callback_data=f"mines:req:{rid}:3")],
-        [InlineKeyboardButton("9 x 9", callback_data=f"mines:req:{rid}:9")],
-        [InlineKeyboardButton("12 x 12", callback_data=f"mines:req:{rid}:12")]
+        [InlineKeyboardButton("4 x 4", callback_data=f"mines:req:{rid}:3")],
+        [InlineKeyboardButton("6 x 6", callback_data=f"mines:req:{rid}:9")],
+        [InlineKeyboardButton("8 x 8", callback_data=f"mines:req:{rid}:12")]
     ])
 
     await message.reply_text(
-        f"Choose board size for bet {bet} coins:\n3x3 (easy) | 9x9 | 12x12 (hard)",
+        f"Choose board size for bet {bet} coins:\n4x4 (easy) | 6x6 | 8x8 (hard)",
         reply_markup=kb
     )
 
@@ -117,12 +117,12 @@ async def start_single_game(client, cq, req_doc, grid:int):
 
     total_cells = grid * grid
     # choose number of mines: make it proportional to grid (for fun)
-    if grid == 3:
-        mines = 3
-    elif grid == 9:
-        mines = 15
-    else:  # 12
-        mines = 25
+    if grid == 4:
+        mines = 4
+    elif grid == 6:
+        mines = 6
+    else:  # 8
+        mines = 8
 
     mine_positions = random.sample(range(total_cells), mines)
 
@@ -322,9 +322,9 @@ async def mch_accept(client, cq, cid):
 
     # send size selection (we'll reuse a similar flow: 3x3,9x9,12x12)
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("3 x 3", callback_data=f"mch:size:{cid}:3")],
-        [InlineKeyboardButton("9 x 9", callback_data=f"mch:size:{cid}:9")],
-        [InlineKeyboardButton("12 x 12", callback_data=f"mch:size:{cid}:12")]
+        [InlineKeyboardButton("4 x 4", callback_data=f"mch:size:{cid}:3")],
+        [InlineKeyboardButton("6 x 6", callback_data=f"mch:size:{cid}:9")],
+        [InlineKeyboardButton("8 x 8", callback_data=f"mch:size:{cid}:12")]
     ])
     try:
         await cq.message.edit_text("Select board size for multiplayer duel:", reply_markup=kb)
@@ -356,10 +356,10 @@ async def mch_size_selected(client, cq, cid, grid_choice:int):
     total_cells = grid_choice * grid_choice
     if grid_choice == 3:
         mines = 3
-    elif grid_choice == 9:
-        mines = 15
+    elif grid_choice == 6:
+        mines = 6
     else:
-        mines = 25
+        mines = 8
 
     mine_positions = random.sample(range(total_cells), mines)
     game = {
