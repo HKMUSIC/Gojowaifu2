@@ -43,185 +43,148 @@ async def balance(client: Client, message: Message):
         has_spoiler=True   # photo bhi spoiler me hoga
     )
 
-# ---------------- PAY COMMAND (Improved) ---------------- #
+
 @app.on_message(filters.command("pay"))
-async def pay_command(client: Client, message: Message):
+async def pay(client: Client, message: Message):
     sender_id = message.from_user.id
-    args = message.text.split()
+    args = message.command
 
-    # 1) Reply-to-user case: `/pay <amount>` as reply
+    if len(args) < 2:
+        await message.reply_text("Usage: /pay <amount> [@username/user_id] or reply to a user.")
+        return
+
+    try:
+        amount = int(args[1])
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply_text("Invalid amount. Please enter a positive number.")
+        return
+
     recipient_id = None
-    amount = None
+    recipient_name = None
 
-    if message.reply_to_message and len(args) >= 2:
-        # /pay 100 (reply to user's message)
+    if message.reply_to_message:
+        recipient_id = message.reply_to_message.from_user.id
+        recipient_name = message.reply_to_message.from_user.first_name
+    elif len(args) > 2:
         try:
-            amount = int(args[1])
-        except:
-            return await message.reply_text("❌ Usage: reply to a user and send `/pay <amount>`\nOr use `/pay <amount> @username`")
-        recipient = message.reply_to_message.from_user
-        recipient_id = recipient.id
-
-    else:
-        # Non-reply: try to parse /pay <amount> @username  OR /pay @username <amount>
-        # Expect at least 3 tokens: ['/pay', x, y]
-        if len(args) < 3:
-            return await message.reply_text("❌ Usage:\n/pay <amount> @username\nor\n/pay @username <amount>\nor reply to a user's message with `/pay <amount>`")
-
-        # Remove command token and examine the next two tokens
-        token1 = args[1]
-        token2 = args[2]
-
-        # Determine which token is amount
-        if token1.lstrip('-').isdigit():  # token1 is amount
-            try:
-                amount = int(token1)
-            except:
-                return await message.reply_text("❌ Invalid amount.")
-            target = token2
-        elif token2.lstrip('-').isdigit():  # token2 is amount
-            try:
-                amount = int(token2)
-            except:
-                return await message.reply_text("❌ Invalid amount.")
-            target = token1
-        else:
-            return await message.reply_text("❌ Could not parse. Provide an amount and a username or reply to a user's message.")
-
-        # Normalize username (allow both @username or numeric id)
-        if target.startswith("@"):
-            target = target[1:]
-
-        # Try resolving user (username -> user object). If numeric id provided, use it.
-        try:
-            if target.isdigit():
-                recipient_id = int(target)
+            recipient_id = int(args[2])
+        except ValueError:
+            recipient_username = args[2].lstrip('@')  # Remove @ from username
+            user_data = await user_collection.find_one({'username': recipient_username}, {'id': 1, 'first_name': 1})
+            if user_data:
+                recipient_id = user_data['id']
+                recipient_name = user_data.get('first_name', recipient_username)
             else:
-                user_obj = await client.get_users(target)  # can accept username or user id string
-                recipient_id = user_obj.id
-        except Exception as e:
-            return await message.reply_text(f"❌ Could not find user `{html.escape(target)}`. Make sure username is correct or try by replying to the user's message.", parse_mode="markdown")
+                await message.reply_text("Recipient not found. Please check the username or reply to a user.")
+                return
 
-    # Validate amount and recipient
-    if amount is None or recipient_id is None:
-        return await message.reply_text("❌ Error parsing command. Usage:\n/pay <amount> @username\nor reply to a user's message with `/pay <amount>`")
+    if not recipient_id:
+        await message.reply_text("Recipient not found. Reply to a user or provide a valid user ID/username.")
+        return
 
-    if amount <= 0:
-        return await message.reply_text("❌ Amount must be greater than 0.")
-
-    if recipient_id == sender_id:
-        return await message.reply_text("❌ You cannot pay yourself.")
-
-    # Check sender balance
-    sender_balance = await get_balance(sender_id)
+    sender_balance, _ = await get_balance(sender_id)
     if sender_balance < amount:
-        return await message.reply_text(f"❌ Insufficient balance. Your balance: {sender_balance} coins")
+        await message.reply_text("Insufficient balance.")
+        return
 
-    # Create transaction
-    txn_id = str(uuid.uuid4())
-    created_at = datetime.utcnow()
+    await user_collection.update_one({'id': sender_id}, {'$inc': {'balance': -amount}})
+    await user_collection.update_one({'id': recipient_id}, {'$inc': {'balance': amount}})
 
-    await txn_collection.insert_one({
-        "txn_id": txn_id,
-        "sender": sender_id,
-        "recipient": recipient_id,
-        "amount": amount,
-        "status": "pending",
-        "created_at": created_at
-    })
+    updated_sender_balance, _ = await get_balance(sender_id)
+    updated_recipient_balance, _ = await get_balance(recipient_id)
 
-    # Build confirmation buttons
-    keyboard = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"pay:{txn_id}:confirm"),
-                InlineKeyboardButton("❌ Cancel", callback_data=f"pay:{txn_id}:cancel")
-            ]
-        ]
+    # Use first name or ID for recipient in the response
+    recipient_display = html.escape(recipient_name or str(recipient_id))
+    sender_display = html.escape(message.from_user.first_name or str(sender_id))
+
+    await message.reply_text(
+        f"✅ You paid {amount} coins to {recipient_display}.\n"
+        f"💰 Your New Balance: {updated_sender_balance} coins"
     )
 
-    # Show preview message (mention recipient)
+    await client.send_message(
+        chat_id=recipient_id,
+        text=f"🎉 You received {amount} coins from {sender_display}!\n"
+        f"💰 Your New Balance: {updated_recipient_balance} coins"
+    )
+
+@app.on_message(filters.command("kill"))
+@require_power("VIP")
+async def kill_handler(client, message):
+    # Get the user_id from the reply message
+    if message.reply_to_message:
+        user_id = message.reply_to_message.from_user.id
+    else:
+        await message.reply_text("Please reply to a user's message to use the /kill command.")
+        return
+
+    command_args = message.text.split()
+
+    if len(command_args) < 2:
+        await message.reply_text("Please specify an option: `c` to delete character, `f` to delete full data, or `b` to delete balance.")
+        return
+
+    option = command_args[1]
+
     try:
-        recipient_mention = f"<a href='tg://user?id={recipient_id}'>recipient</a>"
-        await message.reply_text(
-            f"⚠️ Confirm payment of <b>{amount}</b> coins to {recipient_mention}?\n\nTransaction ID: <code>{txn_id}</code>\n(Expires in 10 minutes)",
-            reply_markup=keyboard,
-            parse_mode="html"
-        )
-    except:
-        # fallback plain text
-        await message.reply_text(
-            f"⚠️ Confirm payment of {amount} coins to user `{recipient_id}`?\n\nTransaction ID: `{txn_id}`\n(Expires in 10 minutes)",
-            reply_markup=keyboard,
-            parse_mode="markdown"
-        )
+        if option == 'f':
+            # Delete full user data
+            await user_collection.delete_one({"id": user_id})
+            await message.reply_text("The full data of the user has been deleted.")
 
-# ---------------- PAY CALLBACK HANDLER ---------------- #
-@ app.on_callback_query(filters.regex(r"^pay:"))
-async def pay_callback(client: Client, cq):
-    try:
-        data = cq.data  # e.g. "pay:txn_uuid:confirm"
-        parts = data.split(":")
-        if len(parts) != 3:
-            return await cq.answer("⚠️ Invalid callback.", show_alert=True)
+        elif option == 'c':
+            # Delete specific character from the user's collection
+            if len(command_args) < 3:
+                await message.reply_text("Please specify a character ID to remove.")
+                return
 
-        _, txn_id, action = parts
+            char_id = command_args[2]
+            user = await user_collection.find_one({"id": user_id})
 
-        txn = await txn_collection.find_one({"txn_id": txn_id})
-        if not txn or txn.get("status") != "pending":
-            return await cq.answer("❌ Transaction expired or already processed.", show_alert=True)
+            if user and 'characters' in user:
+                characters = user['characters']
+                updated_characters = [c for c in characters if c.get('id') != char_id]
 
-        # Expiry check (10 minutes)
-        created_at = txn.get("created_at")
-        if created_at and isinstance(created_at, datetime):
-            if datetime.utcnow() - created_at > timedelta(minutes=10):
-                await txn_collection.update_one({"txn_id": txn_id}, {"$set": {"status": "expired"}})
-                try:
-                    await cq.message.edit_text("❌ Transaction expired (timeout).")
-                except:
-                    pass
-                return await cq.answer("❌ Transaction expired.", show_alert=True)
+                if len(updated_characters) == len(characters):
+                    await message.reply_text(f"No character with ID {char_id} found in the user's collection.")
+                    return
 
-        # Only sender can confirm/cancel
-        if cq.from_user.id != txn["sender"]:
-            return await cq.answer("⚠️ Only the transaction initiator can confirm/cancel.", show_alert=True)
+                # Update user collection
+                await user_collection.update_one({"id": user_id}, {"$set": {"characters": updated_characters}})
+                await message.reply_text(f"Character with ID {char_id} has been removed from the user's collection.")
+            else:
+                await message.reply_text(f"No characters found in the user's collection.")
 
-        if action == "cancel":
-            await txn_collection.update_one({"txn_id": txn_id}, {"$set": {"status": "cancelled"}})
+        elif option == 'b':
+            # Check if amount is provided
+            if len(command_args) < 3:
+                await message.reply_text("Please specify an amount to deduct from balance.")
+                return
+
             try:
-                await cq.message.edit_text("❌ Payment cancelled by sender.")
-            except:
-                pass
-            return await cq.answer("Cancelled ✅")
+                amount = int(command_args[2])
+            except ValueError:
+                await message.reply_text("Invalid amount. Please enter a valid number.")
+                return
 
-        if action == "confirm":
-            sender = txn["sender"]
-            recipient = txn["recipient"]
-            amount = int(txn["amount"])
+            # Fetch user balance
+            user_data = await user_collection.find_one({"id": user_id}, {"balance": 1})
+            if user_data and "balance" in user_data:
+                current_balance = user_data["balance"]
+                new_balance = max(0, current_balance - amount)  # Ensure balance doesn't go negative
+                
+                await user_collection.update_one({"id": user_id}, {"$set": {"balance": new_balance}})
+                await message.reply_text(f"{amount} has been deducted from the user's balance. New balance: {new_balance}")
+            else:
+                await message.reply_text("The user has no balance to deduct from.")
 
-            # Re-check balance atomically (best-effort)
-            sender_balance = await get_balance(sender)
-            if sender_balance < amount:
-                await txn_collection.update_one({"txn_id": txn_id}, {"$set": {"status": "failed_insufficient"}})
-                return await cq.answer("❌ Insufficient balance.", show_alert=True)
-
-            # Perform balance transfer
-            await user_collection.update_one({"id": sender}, {"$inc": {"balance": -amount}})
-            await user_collection.update_one({"id": recipient}, {"$inc": {"balance": amount}}, upsert=True)
-            await txn_collection.update_one({"txn_id": txn_id}, {"$set": {"status": "done", "completed_at": datetime.utcnow()}})
-
-            # Edit message to success
-            try:
-                recipient_mention = f"<a href='tg://user?id={recipient}'>recipient</a>"
-                await cq.message.edit_text(f"✅ Paid <b>{amount}</b> coins to {recipient_mention}!\nTransaction ID: <code>{txn_id}</code>", parse_mode="html")
-            except:
-                await cq.message.edit_text(f"✅ Paid {amount} coins to user `{recipient}`!\nTransaction ID: `{txn_id}`", parse_mode="markdown")
-            return await cq.answer("✅ Payment successful!")
+        else:
+            await message.reply_text("Invalid option. Use `c` for character, `f` for full data, or `b {amount}` to deduct balance.")
 
     except Exception as e:
-        print("PAY CALLBACK ERROR:", e)
-        try:
-            return await cq.answer("⚠️ Something went wrong.", show_alert=True)
-        except:
-            return
+        print(f"Error in /kill command: {e}")
+        await message.reply_text("An error occurred while processing the request. Please try again later.")
+        
 
