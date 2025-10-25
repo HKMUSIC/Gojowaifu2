@@ -1,5 +1,6 @@
 import asyncio
 import html
+from pyrogram.types import Message
 from random import choice, randint
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
