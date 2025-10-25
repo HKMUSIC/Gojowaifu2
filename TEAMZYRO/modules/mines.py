@@ -86,9 +86,9 @@ async def mines_menu(client, message):
     })
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("4 x 4", callback_data=f"mines:req:{rid}:3")],
-        [InlineKeyboardButton("6 x 6", callback_data=f"mines:req:{rid}:9")],
-        [InlineKeyboardButton("8 x 8", callback_data=f"mines:req:{rid}:12")]
+        [InlineKeyboardButton("4 x 4", callback_data=f"mines:req:{rid}:4")],
+        [InlineKeyboardButton("6 x 6", callback_data=f"mines:req:{rid}:6")],
+        [InlineKeyboardButton("8 x 8", callback_data=f"mines:req:{rid}:8")]
     ])
 
     await message.reply_text(
