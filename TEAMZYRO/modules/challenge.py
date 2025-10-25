@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pyrogram import Client, filters
 
 # database imports
-from Database import user_collection, characters_col
+from Database import user_collection
 from Utils.cooldown import check_cooldown, get_remaining_cooldown  # optional if you use cooldown
 
 last_challenges = {}  # store active challenges per chat
