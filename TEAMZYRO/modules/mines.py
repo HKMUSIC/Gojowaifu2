@@ -510,8 +510,6 @@ async def handle_mp_refresh(client, cq, cid):
     return await cq.answer("Refreshed ✅")
 
 # ---------------- User stats command with cooldown ---------------- #
-from datetime import datetime, timedelta
-
 # store cooldowns in memory (simple dict: {user_id: datetime})
 _mystats_cooldown = {}
 
@@ -555,10 +553,7 @@ async def mystats_cmd(client, message):
         f"{profit_emoji} **Net Profit/Loss:** `{net}` coins"
     )
 
-    await message.reply_text(msg)
-
-
-    
+    await message.reply_text(msg)   
                             
 # ---------------- Universal callback router ---------------- #
 @bot.on_callback_query()
