@@ -1,73 +1,77 @@
 import asyncio
-from random import choice, randint
-
 import html
-from random import randint, choice
+from random import choice, randint
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # database imports
 from Database import user_collection, characters_col
-from Utils.cooldown import check_cooldown, get_remaining_cooldown  # only if you use cooldown
+from Utils.cooldown import check_cooldown, get_remaining_cooldown  # optional if you use cooldown
 
-# optional if you use cooldowns
-# from Utils.cooldown import check_cooldown, get_remaining_cooldown
+last_challenges = {}  # store active challenges per chat
 
-last_challenges = {}  # store current active challenges per chat
+# ---------------- WAIFU CHALLENGE SYSTEM ---------------- #
 
-@app.on_message(filters.command("challenge_spawn"))
+@Client.on_message(filters.command("challenge_spawn"))
 async def challenge_spawn(client: Client, message: Message):
     chat_id = message.chat.id
 
-    # Fetch all waifus from DB (replace 'characters_col' with your waifu collection)
+    # Fetch all waifus from DB
     all_chars = await characters_col.find().to_list(None)
     if not all_chars:
-        await message.reply_text("❌ No waifus available in database.")
-        return
+        return await message.reply_text("❌ No waifus available in database.")
 
     char = choice(all_chars)
     last_challenges[chat_id] = char  # store current waifu
 
     caption = (
-        f"💫 A mysterious waifu has appeared! 💫\n"
+        f"💫 A mysterious waifu has appeared! 💫\n\n"
         f"Type `/challenge {char['name']}` to fight her!"
     )
 
-    await message.reply_photo(
-        photo=char["image"],
-        caption=caption,
-        has_spoiler=True  # spoiler mode ON
-  )
+    try:
+        await message.reply_photo(
+            photo=char["image"],
+            caption=caption,
+            has_spoiler=True
+        )
+    except Exception as e:
+        print("challenge_spawn error:", e)
+        await message.reply_text("⚠️ Failed to send waifu image. Please check image URL.")
 
-@app.on_message(filters.command("challenge"))
+
+@Client.on_message(filters.command("challenge"))
 async def challenge(client: Client, message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
 
-    # Check if challenge waifu exists
+    # optional: cooldown check
+    if await check_cooldown(user_id):
+        remaining_time = await get_remaining_cooldown(user_id)
+        return await message.reply_text(
+            f"⚠️ You're in cooldown. Try again in {remaining_time} seconds."
+        )
+
+    # Check if any waifu spawned in this chat
     if chat_id not in last_challenges:
-        await message.reply_text("❌ No waifu to challenge right now! Use /challenge_spawn first.")
-        return
+        return await message.reply_text("❌ No waifu to challenge right now! Use /challenge_spawn first.")
 
     waifu = last_challenges[chat_id]
-    guess = ' '.join(message.command[1:]).strip().lower()
+    guess = " ".join(message.command[1:]).strip().lower()
 
     if not guess:
-        await message.reply_text("Usage: `/challenge <character name>`", quote=True)
-        return
+        return await message.reply_text("Usage: `/challenge <character name>`", quote=True)
 
     # Compare guessed name
     if guess != waifu["name"].lower():
-        await message.reply_text(f"❌ Wrong challenge name! Try again.")
-        return
+        return await message.reply_text("❌ Wrong challenge name! Try again.")
 
-    # Remove the waifu after a valid challenge attempt
+    # Remove current challenge from memory
     del last_challenges[chat_id]
 
     # Random fight result
     result = choice(["win", "lose"])
     strength = choice(["strong", "weak"])
-
     char_name = waifu["name"]
     user_name = message.from_user.first_name
 
@@ -78,26 +82,17 @@ async def challenge(client: Client, message: Message):
             {"$inc": {"balance": reward}},
             upsert=True
         )
-
         await message.reply_text(
-            f"⚔️ {user_name} challenged {char_name}!\n"
+            f"⚔️ {html.escape(user_name)} challenged {char_name}!\n"
             f"The fight was amazing — {char_name} was **{strength}**, but you emerged victorious! 🏆\n\n"
             f"💰 You won {reward} coins!"
         )
     else:
         await message.reply_text(
-            f"⚔️ {user_name} challenged {char_name}!\n"
+            f"⚔️ {html.escape(user_name)} challenged {char_name}!\n"
             f"The fight was intense — {char_name} was **{strength}**, and you lost this time. 😢\n"
             f"Better luck next challenge!"
-  )
-
-
-if await check_cooldown(user_id):
-    remaining_time = await get_remaining_cooldown(user_id)
-    await message.reply_text(
-        f"⚠️ You're in cooldown. Try again in {remaining_time} seconds."
-    )
-    return
+        )
 
 @app.on_message(filters.command("rob"))
 async def rob_command(client: Client, message: Message):
