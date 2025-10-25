@@ -1,8 +1,8 @@
 import asyncio
 import html
 from random import choice, randint
+from datetime import datetime, timedelta
 from pyrogram import Client, filters
-from pyrogram.types import Message
 
 # database imports
 from Database import user_collection, characters_col
@@ -123,12 +123,18 @@ async def set_time(client: Client, message: Message):
         await message.reply_text("❌ Usage: /settime <number>")
 
 
-@app.on_message(filters.command("rob"))
-async def rob_command(client: Client, message: Message):
+
+
+# ---------------- ROB COMMAND (REPLY ONLY, DAILY LIMIT + COOLDOWN) ---------------- #
+
+COOLDOWN_SECONDS = 120 # 1 minute cooldown between robs
+
+@Client.on_message(filters.command("rob") & (filters.group | filters.private))
+async def rob_command(client: Client, message):
     try:
-        # Must be a reply to a user's message
+        # Must reply to a user's message
         if not message.reply_to_message or not message.reply_to_message.from_user:
-            await message.reply_text("Usage: Reply to a user's message with /rob to rob them.")
+            await message.reply_text("❌ Reply to a user's message with /rob to rob them.")
             return
 
         robber_id = message.from_user.id
@@ -138,80 +144,115 @@ async def rob_command(client: Client, message: Message):
         target_id = target.id
         target_name = target.first_name or str(target_id)
 
-        # Prevent robbing self or the bot
+        # Prevent robbing self or bot
         if target_id == robber_id:
-            await message.reply_text("You cannot rob yourself 😅")
+            await message.reply_text("😅 You cannot rob yourself.")
             return
 
-        try:
-            bot_id = (await client.get_me()).id
-            if target_id == bot_id or robber_id == bot_id:
-                await message.reply_text("You cannot rob the bot.")
-                return
-        except Exception:
-            pass  # ignore get_me errors
+        bot_id = (await client.get_me()).id
+        if target_id == bot_id or robber_id == bot_id:
+            await message.reply_text("❌ You cannot rob the bot.")
+            return
 
-        # Ensure both users exist in DB (create minimal docs if missing)
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+        # ---------------- Ensure robber exists ---------------- #
         robber_doc = await user_collection.find_one({'id': robber_id})
         if not robber_doc:
             await user_collection.insert_one({
                 'id': robber_id,
                 'username': message.from_user.username,
                 'first_name': message.from_user.first_name,
-                'balance': 0
+                'balance': 0,
+                'rob_today': 0,
+                'rob_day': today_str,
+                'last_rob': None
             })
-            robber_doc = {'id': robber_id, 'balance': 0}
+            robber_doc = {'id': robber_id, 'balance': 0, 'rob_today': 0, 'rob_day': today_str, 'last_rob': None}
 
+        # Reset daily count if day changed
+        if robber_doc.get('rob_day') != today_str:
+            await user_collection.update_one(
+                {'id': robber_id},
+                {'$set': {'rob_today': 0, 'rob_day': today_str}}
+            )
+            robber_doc['rob_today'] = 0
+            robber_doc['rob_day'] = today_str
+
+        # ---------------- Check daily limit ---------------- #
+        if robber_doc.get('rob_today', 0) >= 5:
+            await message.reply_text("⚠️ You can only use /rob **5 times per day**. Try again tomorrow.")
+            return
+
+        # ---------------- Check cooldown ---------------- #
+        last_rob_time = robber_doc.get('last_rob')
+        if last_rob_time:
+            last_rob_dt = datetime.strptime(last_rob_time, "%Y-%m-%d %H:%M:%S")
+            diff = datetime.utcnow() - last_rob_dt
+            if diff.total_seconds() < COOLDOWN_SECONDS:
+                remaining = int(COOLDOWN_SECONDS - diff.total_seconds())
+                await message.reply_text(f"⏳ You are on cooldown. Try again in {remaining} seconds.")
+                return
+
+        # ---------------- Ensure target exists ---------------- #
         target_doc = await user_collection.find_one({'id': target_id})
         if not target_doc:
             await user_collection.insert_one({
                 'id': target_id,
-                'username': target.username if hasattr(target, 'username') else None,
-                'first_name': target.first_name if hasattr(target, 'first_name') else None,
+                'username': getattr(target, 'username', None),
+                'first_name': getattr(target, 'first_name', None),
                 'balance': 0
             })
             target_doc = {'id': target_id, 'balance': 0}
 
-        # Random amount between 50 and 90
+        # ---------------- Perform rob ---------------- #
         amount = randint(50, 90)
-        current_robber_balance = robber_doc.get('balance', 0)
+        robber_balance = robber_doc.get('balance', 0)
 
-        if current_robber_balance < amount:
+        if robber_balance < amount:
             await message.reply_text(
-                f"❌ Insufficient balance. You need {amount} coins but you have {current_robber_balance}."
+                f"❌ Insufficient balance. You need {amount} coins but you have {robber_balance}."
             )
             return
 
-        # Perform transfer
-        await user_collection.update_one({'id': robber_id}, {'$inc': {'balance': -amount}})
-        await user_collection.update_one({'id': target_id}, {'$inc': {'balance': amount}})
+        # Update balances and rob stats
+        await user_collection.update_one(
+            {'id': robber_id},
+            {'$inc': {'balance': -amount, 'rob_today': 1},
+             '$set': {'last_rob': datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")}}
+        )
+        await user_collection.update_one(
+            {'id': target_id},
+            {'$inc': {'balance': amount}}
+        )
 
         # Fetch updated balances
         updated_robber = await user_collection.find_one({'id': robber_id})
         updated_target = await user_collection.find_one({'id': target_id})
-        updated_robber_balance = updated_robber.get('balance', 0)
-        updated_target_balance = updated_target.get('balance', 0)
 
         await message.reply_text(
-            f"🕵️ {html.escape(robber_name)} tried to rob {html.escape(target_name)}!\n\n"
-            f"💸 {amount} coins have been transferred from {html.escape(robber_name)} to {html.escape(target_name)}.\n\n"
-            f"Your new balance: {updated_robber_balance} coins\n"
-            f"{html.escape(target_name)}'s new balance: {updated_target_balance} coins"
+            f"🕵️ {html.escape(robber_name)} robbed {html.escape(target_name)}!\n\n"
+            f"💸 {amount} coins transferred.\n\n"
+            f"Your new balance: {updated_robber.get('balance', 0)} coins\n"
+            f"{html.escape(target_name)}'s new balance: {updated_target.get('balance', 0)} coins\n"
+            f"🗓 You have used /rob {updated_robber.get('rob_today',0)}/5 times today."
         )
 
-        # Notify victim (best-effort)
+        # Notify victim
         try:
             await client.send_message(
                 chat_id=target_id,
                 text=(
-                    f"⚠️ You were targeted by {html.escape(robber_name)}'s /rob! "
-                    f"You received {amount} coins.\nYour new balance: {updated_target_balance} coins"
+                    f"⚠️ You were robbed by {html.escape(robber_name)}!\n"
+                    f"You received {amount} coins.\n"
+                    f"Your new balance: {updated_target.get('balance', 0)} coins"
                 )
             )
-        except Exception:
+        except:
             pass
 
     except Exception as e:
         print(f"/rob error: {e}")
-        await message.reply_text("An error occurred while processing /rob. Try again later.")
-      
+        await message.reply_text("❌ An error occurred while processing /rob. Try again later.")
+
+
