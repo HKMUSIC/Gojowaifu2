@@ -6,7 +6,7 @@ from pyrogram import Client, filters
 
 # database imports
 from TEAMZYRO import ZYRO as bot, user_collection 
-from Utils.cooldown import check_cooldown, get_remaining_cooldown  # optional if you use cooldown
+from TEAMZYRO import check_cooldown, get_remaining_cooldown  # optional if you use cooldown
 
 last_challenges = {}  # store active challenges per chat
 chat_message_count = {}     # counts messages per chat
