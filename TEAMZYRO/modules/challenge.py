@@ -9,6 +9,8 @@ from Database import user_collection, characters_col
 from Utils.cooldown import check_cooldown, get_remaining_cooldown  # optional if you use cooldown
 
 last_challenges = {}  # store active challenges per chat
+chat_message_count = {}     # counts messages per chat
+spawn_interval = 30         # default: spawn every 30 messages
 
 # ---------------- WAIFU CHALLENGE SYSTEM ---------------- #
 
@@ -93,6 +95,33 @@ async def challenge(client: Client, message: Message):
             f"The fight was intense — {char_name} was **{strength}**, and you lost this time. 😢\n"
             f"Better luck next challenge!"
         )
+        
+@Client.on_message(filters.group | filters.private)
+async def auto_spawn(client: Client, message: Message):
+    chat_id = message.chat.id
+
+    # Increment message count
+    if chat_id not in chat_message_count:
+        chat_message_count[chat_id] = 0
+    chat_message_count[chat_id] += 1
+
+    # Check if interval reached
+    if chat_message_count[chat_id] >= spawn_interval:
+        chat_message_count[chat_id] = 0  # reset counter
+        await challenge_spawn(client, message)  # call spawn function
+
+@Client.on_message(filters.command("settime"))
+async def set_time(client: Client, message: Message):
+    global spawn_interval
+    try:
+        new_interval = int(message.command[1])
+        if new_interval < 1:
+            return await message.reply_text("❌ Interval must be at least 1 message.")
+        spawn_interval = new_interval
+        await message.reply_text(f"✅ Waifu will now spawn every {spawn_interval} messages.")
+    except:
+        await message.reply_text("❌ Usage: /settime <number>")
+
 
 @app.on_message(filters.command("rob"))
 async def rob_command(client: Client, message: Message):
