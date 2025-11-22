@@ -28,12 +28,6 @@ MARKET_TAG_IMAGES = [
     "https://files.catbox.moe/xokoit.jpg",
 ]
 
-# --- Helper: Check if it's Sunday IST ---
-def is_ist_sunday():
-    now_utc = datetime.utcnow()
-    ist_now = now_utc + timedelta(hours=5, minutes=30)
-    return ist_now.weekday() == 6  # Sunday
-
 # --- /market command ---
 @app.on_message(filters.command(["market", "hmarket", "hmarketmenu"]))
 async def show_market(client, message):
