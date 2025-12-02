@@ -5,7 +5,11 @@ import random
 app = Client("wordgame", api_id=24965086, api_hash="b9c764ce47c010e1a887f19fea54f648")
 
 # Load word list
-with open("words.txt", "r") as f:
+import os
+
+FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "words.txt")
+
+with open(FILE_PATH, "r") as f:
     WORDS = set(w.strip().lower() for w in f.readlines())
 
 games = {}  # store game data per chat
