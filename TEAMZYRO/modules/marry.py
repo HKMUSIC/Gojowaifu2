@@ -11,13 +11,13 @@ waifu_collection = db["waifus"]
 
 @app.on_message(filters.command("marry"))
 async def marry_cmd(client, message: Message):
-
     user = message.from_user.first_name
 
-    # 1) Send Dice Like Screenshot
+    # Send dice
     dice_msg = await message.reply_dice("🎲")
+    await asyncio.sleep(2)
 
-    # 2) Fetch random waifu from MongoDB
+    # Fetch random waifu
     waifu = list(waifu_collection.aggregate([{"$sample": {"size": 1}}]))[0]
 
     name = waifu.get("name", "Unknown")
@@ -25,9 +25,9 @@ async def marry_cmd(client, message: Message):
     anime = waifu.get("anime", "Unknown")
     image = waifu.get("image")
 
-    # 3) Prepare caption like screenshot
+    # Prepare caption
     caption = f"""
-CONGRATULATIONS! **{user}**, YOU ARE NOW MARRIED!
+CONGRATULATIONS! ||{user}||, YOU ARE NOW MARRIED!
 HERE IS YOUR CHARACTER:
 
 **Name:** {name}
@@ -35,8 +35,8 @@ HERE IS YOUR CHARACTER:
 **Anime:** {anime}
 """
 
-    # 4) Send waifu image + caption
+    # Send waifu image
     if image:
-        await message.reply_photo(image, caption=caption)
+        await message.reply_photo(image, caption=caption, parse_mode="markdown")
     else:
-        await message.reply(caption)
+        await message.reply(caption, parse_mode="markdown")
