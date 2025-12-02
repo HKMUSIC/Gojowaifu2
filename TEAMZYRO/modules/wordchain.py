@@ -1,174 +1,174 @@
-from TEAMZYRO import app
-from pyrogram import filters
+from pyrogram import Client, filters
 import asyncio
 import random
 
-# ==============================
-# WORD LIST LOAD
-# ==============================
-import aiohttp
+app = Client("wordgame", api_id=24965086, api_hash="b9c764ce47c010e1a887f19fea54f648")
 
-WORD_URL = "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt"
-WORDS = []
+# Load word list
+with open("words.txt", "r") as f:
+    WORDS = set(w.strip().lower() for w in f.readlines())
 
-async def load_words():
-    global WORDS
-    async with aiohttp.ClientSession() as session:
-        async with session.get(WORD_URL) as resp:
-            text = await resp.text()
-            WORDS = text.splitlines()
+games = {}  # store game data per chat
 
-app.loop.create_task(load_words())  # load words on startup
-
-# ==============================
-# GAME STATE
-# ==============================
-
-games = {}  # chat_id : { players, turn_index, mode, last_letter, timeout_task }
-
-
-# ==============================
+# -------------------------------------------------------
 # /join
-# ==============================
+# -------------------------------------------------------
 @app.on_message(filters.command("join"))
 async def join_game(_, message):
     chat_id = message.chat.id
-    user = message.from_user
 
     if chat_id not in games:
         games[chat_id] = {
             "players": [],
             "turn_index": 0,
-            "mode": 3,              # starting with 3-letter words
-            "last_letter": None,
-            "timeout_task": None
+            "mode": 3,
+            "last_letter": random.choice("abcdefghijklmnopqrstuvwxyz"),
+            "timeout_task": None,
+            "active": False,
         }
 
     game = games[chat_id]
 
-    # Add player
-    if user.id in game["players"]:
-        return await message.reply(f"❗ {user.mention} you are already in the game.")
+    if message.from_user.id in game["players"]:
+        return await message.reply("Already joined!")
 
-    game["players"].append(user.id)
-    await message.reply(f"✅ {user.mention} joined the WordChain game!\nPlayers: {len(game['players'])}")
+    game["players"].append(message.from_user.id)
+    await message.reply(f"✔ {message.from_user.first_name} joined the game!")
 
-    # Start game when 2+ players
-    if len(game["players"]) == 2:
-        await start_round(message)
-
-
-# ==============================
-# START ROUND
-# ==============================
-async def start_round(message):
+# -------------------------------------------------------
+# /startgame
+# -------------------------------------------------------
+@app.on_message(filters.command("startgame"))
+async def start_game(_, message):
     chat_id = message.chat.id
-    game = games[chat_id]
 
-    player_id = game["players"][game["turn_index"]]
+    if chat_id not in games or len(games[chat_id]["players"]) < 2:
+        return await message.reply("Need at least 2 players to start!")
+
+    game = games[chat_id]
+    game["active"] = True
+    game["mode"] = 3
+    game["turn_index"] = 0
     game["last_letter"] = random.choice("abcdefghijklmnopqrstuvwxyz")
 
     await message.reply(
-        f"🎮 **WordChain Game Started!**\n"
-        f"👉 Mode: `{game['mode']}` letters\n"
-        f"👉 Starting letter: `{game['last_letter']}`\n"
-        f"👉 Player turn: [{player_id}](tg://user?id={player_id})"
+        f"🎮 Word Game Started!\n"
+        f"➡ First letter: **{game['last_letter']}**\n"
+        f"➡ Minimum letters: **{game['mode']}**"
     )
 
-    await start_timeout(message)
+    await next_turn(message)
 
+# -------------------------------------------------------
+# /stopgame
+# -------------------------------------------------------
+@app.on_message(filters.command("stopgame"))
+async def stop_game(_, message):
+    chat_id = message.chat.id
 
-# ==============================
-# TIMEOUT HANDLER
-# ==============================
-async def start_timeout(message):
+    if chat_id in games:
+        if games[chat_id]["timeout_task"]:
+            games[chat_id]["timeout_task"].cancel()
+        del games[chat_id]
+
+    await message.reply("🛑 Game stopped.")
+
+# -------------------------------------------------------
+# TURN SYSTEM + TIMEOUT
+# -------------------------------------------------------
+async def next_turn(message):
     chat_id = message.chat.id
     game = games[chat_id]
 
-    if game["timeout_task"]:
-        game["timeout_task"].cancel()
+    current_player = game["players"][game["turn_index"]]
 
-    async def kick_player():
-        await asyncio.sleep(15)  # 15 sec timeout
-        player = game["players"][game["turn_index"]]
-        game["players"].remove(player)
+    msg = await message.reply(
+        f"🎯 **Turn:** {message.chat.get_member(current_player).user.first_name}\n"
+        f"➡ Word must start with: **{game['last_letter']}**\n"
+        f"➡ Minimum letters: **{game['mode']}**\n"
+        f"⏳ You have 15 seconds!"
+    )
 
-        await message.reply(
-            f"⏳ Timeout!\n"
-            f"❌ Player kicked: [{player}](tg://user?id={player})"
-        )
+    # timeout kick
+    async def timeout():
+        await asyncio.sleep(15)
+        try:
+            kicked = game["players"].pop(game["turn_index"])
+            await message.reply(
+                f"⏱ Timeout! Player kicked from game.\n"
+                f"🚫 Removed: `{kicked}`"
+            )
+        except:
+            return
 
         if len(game["players"]) < 2:
             del games[chat_id]
-            return await message.reply("🏁 Game ended. Not enough players.")
+            return await message.reply("Game ended — not enough players.")
 
+        game["turn_index"] %= len(game["players"])
         await next_turn(message)
 
-    game["timeout_task"] = app.loop.create_task(kick_player())
+    # start timeout
+    if game["timeout_task"]:
+        game["timeout_task"].cancel()
 
+    game["timeout_task"] = asyncio.create_task(timeout())
 
-# ==============================
-# MESSAGE HANDLER (TURN SYSTEM)
-# ==============================
+# -------------------------------------------------------
+# PLAYER WORD INPUT
+# -------------------------------------------------------
 @app.on_message(filters.text & ~filters.command([]))
 async def game_turn(_, message):
     chat_id = message.chat.id
+
     if chat_id not in games:
         return
 
     game = games[chat_id]
-    try:
-        player = game["players"][game["turn_index"]]
-    except:
+    if not game["active"]:
         return
 
+    # must be the current player
+    player = game["players"][game["turn_index"]]
     if message.from_user.id != player:
         return
 
     word = message.text.lower()
 
-    # Check rules
+    # check starting letter
     if not word.startswith(game["last_letter"]):
-        return await message.reply("❌ Wrong starting letter.")
+        return await message.reply("❌ Wrong starting letter!")
 
-    if len(word) != game["mode"]:
-        return await message.reply(f"❗ Word must be exactly `{game['mode']}` letters.")
+    # check minimum length
+    if len(word) < game["mode"]:
+        return await message.reply(f"❗ Word must be at least **{game['mode']}** letters!")
 
+    # dictionary check
     if word not in WORDS:
-        return await message.reply("❗ Not a valid English word.")
+        return await message.reply("❗ Not a valid English word!")
 
-    # Correct word
-    game["last_letter"] = word[-1]  # next player must use last letter
+    # correct → update last letter
+    game["last_letter"] = word[-1]
 
-    # Increase mode until 10
+    # increase mode up to 10
     if game["mode"] < 10:
         game["mode"] += 1
 
-    # Cancel timeout
+    # stop timeout
     if game["timeout_task"]:
         game["timeout_task"].cancel()
 
     await message.reply(
-        f"✔ Correct!\nNext mode: `{game['mode']}` letters\nNext letter: `{game['last_letter']}`"
+        f"✔ Correct!\n"
+        f"➡ Next starting letter: **{game['last_letter']}**\n"
+        f"➡ Next minimum letters: **{game['mode']}**"
     )
+
+    # next player
+    game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
 
     await next_turn(message)
 
-
-# ==============================
-# NEXT TURN
-# ==============================
-async def next_turn(message):
-    chat_id = message.chat.id
-    game = games[chat_id]
-
-    game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
-    player = game["players"][game["turn_index"]]
-
-    await message.reply(
-        f"👉 Next turn: [{player}](tg://user?id={player})\n"
-        f"🔤 Letter: `{game['last_letter']}`\n"
-        f"📏 Mode: `{game['mode']}` letters"
-    )
-
-    await start_timeout(message)
+# -------------------------------------------------------
+print("Bot Running...")
+app.run()
