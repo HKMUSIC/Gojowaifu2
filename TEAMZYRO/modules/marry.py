@@ -3,12 +3,12 @@ from datetime import datetime, timedelta
 import asyncio
 
 # ---- Mongo Collections ----
-from TEAMZYRO import ZYRO as bot
+from TEAMZYRO import app
 from TEAMZYRO import users   # <== make sure this is your Mongo collection
 
 
-@bot.on_message(filters.command("marry"))
-async def marry_cmd(client, message):
+@app.on_message(filters.command("marry"))
+async def brain_cmd(client, message: Message):
 
     try:
         user_id = message.from_user.id
