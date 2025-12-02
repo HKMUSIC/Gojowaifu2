@@ -1,73 +1,74 @@
-from pyrogram import Client, filters
-from datetime import datetime, timedelta
 import asyncio
+from datetime import datetime, timedelta
+from pyrogram import filters, types as t
+from TEAMZYRO import ZYRO as bot
+from TEAMZYRO import user_collection, collection
 
-# ---- Mongo Collections ----
-from TEAMZYRO import app
-from TEAMZYRO import users   # <== make sure this is your Mongo collection
+# Cooldown cache
+marry_lock = {}
 
 
-@app.on_message(filters.command("marry"))
-async def brain_cmd(client, message: Message):
+@bot.on_message(filters.command("marry"))
+async def marry_cmd(_, message: t.Message):
+    user_id = message.from_user.id
+    mention = message.from_user.mention
 
     try:
-        user_id = message.from_user.id
-        
-        # ---------------------------------------
-        # Fetch user or create if doesn't exist
-        # ---------------------------------------
-        user = users.find_one({"_id": user_id})
+        # ----- Fetch or Create User -----
+        user_data = await user_collection.find_one({"id": user_id})
+        if not user_data:
+            user_data = {
+                "id": user_id,
+                "username": message.from_user.username,
+                "characters": [],
+                "last_daily_reward": None,
+                "last_marry_time": None
+            }
+            await user_collection.insert_one(user_data)
 
-        if user is None:
-            users.insert_one({
-                "_id": user_id,
-                "marry_cooldown": None
-            })
-            user = users.find_one({"_id": user_id})
-
-        # ---------------------------------------
-        # Cooldown check
-        # ---------------------------------------
-        last_marry = user.get("marry_cooldown")
-
+        # ----- Cooldown Check (10 min) -----
+        last_marry = user_data.get("last_marry_time")
         if last_marry:
-            remaining = datetime.utcnow() - last_marry
-            if remaining < timedelta(minutes=10):
-                wait = timedelta(minutes=10) - remaining
-                mins = int(wait.total_seconds() // 60)
-                secs = int(wait.total_seconds() % 60)
-
+            elapsed = datetime.utcnow() - last_marry
+            if elapsed < timedelta(minutes=10):
+                remaining = timedelta(minutes=10) - elapsed
+                mins = int(remaining.total_seconds() // 60)
+                secs = int(remaining.total_seconds() % 60)
                 return await message.reply_text(
-                    f"⏳ **Wait `{mins}m {secs}s` before using /marry again!**"
+                    f"⏳ **Wait `{mins}m {secs}s` before using /marry again.**"
                 )
 
-        # ---------------------------------------
-        # Send dice animation
-        # ---------------------------------------
-        dice = await message.reply_dice("💘")
-        await asyncio.sleep(3)
+        # ----- Dice Animation -----
+        dice_msg = await message.reply_dice("💘")
+        await asyncio.sleep(2)
 
-        value = dice.dice.value
+        # ----- Pick Random Character -----
+        pipeline = [{"$sample": {"size": 1}}]
+        cursor = collection.aggregate(pipeline)
+        characters = await cursor.to_list(length=1)
 
-        # ---------------------------------------
-        # Store new cooldown
-        # ---------------------------------------
-        users.update_one(
-            {"_id": user_id},
-            {"$set": {"marry_cooldown": datetime.utcnow()}}
+        if not characters:
+            return await message.reply_text("❌ No characters available right now!")
+
+        char = characters[0]
+
+        # ----- Update Marry Time -----
+        await user_collection.update_one(
+            {"id": user_id},
+            {"$set": {"last_marry_time": datetime.utcnow()}}
         )
 
-        # ---------------------------------------
-        # Dice result message
-        # ---------------------------------------
-        if value >= 5:
-            await message.reply_text("💍 **Congratulations! You got married!**")
-        else:
-            await message.reply_text("💔 **Marriage failed… Try again after cooldown.**")
+        # ----- Send Character Photo -----
+        caption = (
+            f"🎉 **ᴄᴏɴɢʀᴀᴛᴜʟᴀᴛɪᴏɴꜱ! {mention}** 🎉\n"
+            f"**ʏᴏᴜ ᴀʀᴇ ɴᴏᴡ ᴍᴀʀʀɪᴇᴅ! ʜᴇʀᴇ ɪꜱ ʏᴏᴜʀ ᴄʜᴀʀᴀᴄᴛᴇʀ:**\n\n"
+            f"👰 **Name:** `{char['name']}`\n"
+            f"⭐ **Rarity:** `{char['rarity']}`\n"
+            f"📺 **Anime:** `{char['anime']}`"
+        )
+
+        await message.reply_photo(photo=char["img_url"], caption=caption)
 
     except Exception as e:
-        # Print real error (for debugging)
         print("MARRY ERROR:", e)
-
-        # User-friendly message
-        await message.reply_text("❌ Unexpected error, but bot is safe.")
+        await message.reply_text("❌ Something went wrong in /marry!")
