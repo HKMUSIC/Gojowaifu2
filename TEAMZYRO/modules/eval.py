@@ -12,7 +12,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from pyrogram import enums
 
-from TEAMZYRO import ZYRO as app
+from TEAMZYRO import app
 
 OWNER_ID = [7553434931]
 EVAL = [7553434931]
@@ -29,7 +29,7 @@ async def edit_or_reply(msg: Message, **kwargs):
     spec = getfullargspec(func.__wrapped__).args
     await func(parse_mode=enums.ParseMode.HTML, **{k: v for k, v in kwargs.items() if k in spec})
 
-@app.on_edited_message(
+@app.on_message(
     filters.command("eval")
     & filters.user(EVAL)
     & ~filters.forwarded
