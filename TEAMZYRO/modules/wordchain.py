@@ -103,16 +103,11 @@ async def next_turn(message):
 
     # TIME SETTINGS BY MODE
     time_map = {
-        3: 40,
-        4: 35,
-        5: 30,
-        6: 30,
-        7: 25,
-        8: 25,
-        9: 20,
-        10: 20
+        3: 40, 4: 35, 5: 30, 6: 30,
+        7: 25, 8: 25, 9: 20, 10: 20
     }
     turn_time = time_map.get(game["mode"], 20)
+    game["turn_time"] = turn_time  # store time for use in timeout()
 
     await message.reply(
         f"Turn: {current_mention} ⭐\n"
@@ -120,20 +115,32 @@ async def next_turn(message):
         f"Your word must start with **{game['last_letter'].upper()}** "
         f"and include at least **{game['mode']} letters**.\n"
         f"You have {turn_time}s to answer.\n"
-        f"Players remaining: {len(game['players'])}/{len(game['players'])}\n"
+        f"Players remaining: {len(game['players'])}/{game['initial_players']}\n"
         f"Total words: {game['total_words']}"
     )
-async def timeout():
+
+    # Start timeout task
+    if game.get("timeout_task"):
+        game["timeout_task"].cancel()
+
+    game["timeout_task"] = asyncio.create_task(timeout(message))
+
+
+async def timeout(message):
+    chat_id = message.chat.id
+    game = games[chat_id]
+    turn_time = game["turn_time"]
+
     await asyncio.sleep(turn_time)
 
-    # Remove player
+    # Remove the timed-out player
     kicked_id = game["players"].pop(game["turn_index"])
     kicked_member = await app.get_chat_member(chat_id, kicked_id)
     kicked_mention = kicked_member.user.mention
 
     await message.reply(f"{kicked_mention} ran out of time! They have been eliminated.")
 
-    # Check if winner remains
+    # Check if winner exists
     if len(game["players"]) == 1:
         winner_id = game["players"][0]
         winner_member = await app.get_chat_member(chat_id, winner_id)
@@ -143,38 +150,32 @@ async def timeout():
         total_words = game["total_words"]
         longest_word = game["longest_word"]
 
-        # Calculate game time
+        # Game duration
         duration = int(asyncio.get_event_loop().time() - game["start_time"])
-        hours = duration // 3600
-        minutes = (duration % 3600) // 60
-        seconds = duration % 60
+        h = duration // 3600
+        m = (duration % 3600) // 60
+        s = duration % 60
 
         await message.reply(
             f"🎉 {winner_mention} won the game out of {total_players} players!\n"
             f"🏆 Total words: {total_words}\n"
             f"🔠 Longest word: {longest_word}\n"
-            f"⏳ Game length: {hours:02}:{minutes:02}:{seconds:02}"
+            f"⏳ Game length: {h:02}:{m:02}:{s:02}"
         )
 
         del games[chat_id]
         return
 
-    # If still enough players → continue game
+    # If not enough players
     if len(game["players"]) < 2:
         del games[chat_id]
         return await message.reply("Game ended — not enough players.")
 
-    # Move turn to next player
+    # Correct turn index
     game["turn_index"] %= len(game["players"])
+
+    # Start next turn
     await next_turn(message)
-
-        game["turn_index"] %= len(game["players"])
-        await next_turn(message)
-
-    if game["timeout_task"]:
-        game["timeout_task"].cancel()
-
-    game["timeout_task"] = asyncio.create_task(timeout())
 # -------------------------------------------------------
 # WORD INPUT HANDLING
 # -------------------------------------------------------
