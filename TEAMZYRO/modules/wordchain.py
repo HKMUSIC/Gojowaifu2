@@ -214,12 +214,16 @@ async def game_turn(_, message):
             f"{message.from_user.mention} ❗ Not a valid English word!"
         )
 
-    # ACCEPTED WORD
-    game["last_letter"] = word[-1]
-    game["total_words"] += 1
+# ACCEPTED WORD
+game["last_letter"] = word[-1]
+game["total_words"] += 1
 
-    # Send "word is accepted"
-    await message.reply(f"{word} is accepted.")
+# UPDATE LONGEST WORD
+if len(word) > len(game["longest_word"]):
+    game["longest_word"] = word
+
+# Send "word is accepted"
+await message.reply(f"{word} is accepted.")
 
     # REPEAT LEVEL 3 TIMES BEFORE INCREMENT
     if game["mode"] < 10:
