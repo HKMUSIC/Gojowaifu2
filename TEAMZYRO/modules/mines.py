@@ -34,37 +34,44 @@ async def start_mines(client, message):
     if len(parts) == 1:
         return await message.reply("Usage:\n`/mines 100` to start with 100 coins.")
 
-    bet = int(parts[1])
+    try:
+        bet = int(parts[1])
+        if bet <= 0:
+            return await message.reply("Amount must be positive.")
+    except:
+        return await message.reply("Invalid amount.")
+
     user = await get_user(message.from_user.id)
 
     if user["lockbalance"]:
         return await message.reply("❌ Your balance is locked. Use /unlockbalance first.")
 
+    # ----- BET DEDUCT FIX -----
     if user["balance"] < bet:
         return await message.reply("❌ Not enough balance.")
 
-    # Deduct bet
-    await users.update_one({"id": user["id"]}, {"$inc": {"balance": -bet}})
+    await users.update_one(
+        {"id": user["id"]},
+        {"$inc": {"balance": -bet}}
+    )
+    # ----- END FIX -----
 
     # Setup game
     bombs = random.sample(range(1, 26), 5)
 
     await mines_games.update_one(
         {"user_id": user["id"]},
-        {
-            "$set": {
-                "user_id": user["id"],
-                "bombs": bombs,
-                "opened": [],
-                "multiplier": 1.0,
-                "active": True,
-                "bet": bet
-            }
-        },
+        {"$set": {
+            "user_id": user["id"],
+            "bombs": bombs,
+            "opened": [],
+            "multiplier": 1.0,
+            "active": True,
+            "bet": bet
+        }},
         upsert=True
     )
 
-    # Grid + cashout
     keyboard = build_grid(user["id"], [], True)
 
     await message.reply(
@@ -72,6 +79,7 @@ async def start_mines(client, message):
         f"Bet: <b>{bet}</b>\nMultiplier: <b>1.0x</b>\nProfit: <b>0</b>",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 
@@ -137,10 +145,10 @@ async def cashout_button(client, query: CallbackQuery):
         return await query.answer("⚠ Not your game!", show_alert=True)
 
     # LOCK CHECK
-    user = await user_collection.find_one({"id": uid})
+    user = await users.find_one({"id": uid})
     if not user:
-        await user_collection.insert_one({"id": uid, "balance": 0, "lockbalance": False})
-        user = await user_collection.find_one({"id": uid})
+        await users.insert_one({"id": uid, "balance": 0, "lockbalance": False})
+        user = await users.find_one({"id": uid})
 
     if user.get("lockbalance", False):
         return await query.answer("🔒 Your balance is locked!\nUse /unlockbalance first.", show_alert=True)
@@ -154,13 +162,13 @@ async def cashout_button(client, query: CallbackQuery):
     multiplier = game["multiplier"]
     earnings = int(bet * multiplier)
 
-    # 🔥 FIX — correct collection
-    await user_collection.update_one(
+    # ADD WINNINGS
+    await users.update_one(
         {"id": uid},
         {"$inc": {"balance": earnings}}
     )
 
-    # disable game
+    # deactivate game
     await mines_games.update_one(
         {"user_id": uid},
         {"$set": {"active": False}}
@@ -174,6 +182,7 @@ async def cashout_button(client, query: CallbackQuery):
     )
 
     await query.answer("Cashed Out!")
+
 
 
 
