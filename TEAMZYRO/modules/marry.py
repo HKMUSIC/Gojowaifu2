@@ -69,7 +69,3 @@ async def marry_cmd(_, message: t.Message):
             {"id": user_id},
             {"$set": {"last_marry_time": datetime.utcnow()}}
         )
-
-    except Exception as e:
-        print("MARROY ERROR:", e)
-        await message.reply_text("❌ Something went wrong in /marry!")
