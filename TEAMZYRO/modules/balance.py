@@ -49,17 +49,27 @@ async def pay(client: Client, message: Message):
     sender_id = message.from_user.id
     args = message.command
 
+    # Check args
     if len(args) < 2:
-        await message.reply_text("Usage: /pay <amount> [@username/user_id] or reply to a user.")
-        return
+        return await message.reply_text("Usage: /pay <amount> [@username/user_id] or reply to a user.")
 
+    # Validate amount
     try:
         amount = int(args[1])
         if amount <= 0:
             raise ValueError
     except ValueError:
-        await message.reply_text("Invalid amount. Please enter a positive number.")
-        return
+        return await message.reply_text("❌ Invalid amount. Enter a positive number.")
+
+    # Fetch sender data
+    sender_data = await user_collection.find_one({'id': sender_id}) or {}
+    if not sender_data:
+        sender_data = {'id': sender_id, 'balance': 0, 'lockbalance': False}
+        await user_collection.insert_one(sender_data)
+
+    # Check sender lock
+    if sender_data.get("lockbalance", False):
+        return await message.reply_text("🔒 Your balance is locked! Use /unlockbalance to unlock it first.")
 
     # Identify recipient
     recipient_id = None
@@ -68,94 +78,61 @@ async def pay(client: Client, message: Message):
     if message.reply_to_message:
         recipient_id = message.reply_to_message.from_user.id
         recipient_name = message.reply_to_message.from_user.first_name
+
     elif len(args) > 2:
         try:
             recipient_id = int(args[2])
         except ValueError:
-            recipient_username = args[2].lstrip('@')
-            user_data = await user_collection.find_one({'username': recipient_username}, {'id': 1, 'first_name': 1})
+            username = args[2].lstrip("@")
+            user_data = await user_collection.find_one({'username': username})
             if user_data:
-                recipient_id = user_data['id']
-                recipient_name = user_data.get('first_name', recipient_username)
+                recipient_id = user_data["id"]
+                recipient_name = user_data.get("first_name", username)
             else:
-                await message.reply_text("Recipient not found.")
-                return
+                return await message.reply_text("❌ Recipient not found.")
 
     if not recipient_id:
-        await message.reply_text("Recipient not found. Reply to a user or provide a valid user ID/username.")
-        return
+        return await message.reply_text("❌ Recipient not found.")
 
-    # Ensure both users exist in DB
-    for uid in [sender_id, recipient_id]:
-        if not await user_collection.find_one({'id': uid}):
-            await user_collection.insert_one({'id': uid, 'balance': 0})
+    if recipient_id == sender_id:
+        return await message.reply_text("❌ You cannot pay yourself.")
 
-    sender_balance = await get_balance(sender_id)
-    if sender_balance < amount:
-        await message.reply_text("❌ Insufficient balance.")
-        return
+    # Fetch recipient data
+    recipient_data = await user_collection.find_one({'id': recipient_id}) or {}
+    if not recipient_data:
+        recipient_data = {'id': recipient_id, 'balance': 0, 'lockbalance': False}
+        await user_collection.insert_one(recipient_data)
 
+    # Check recipient lock
+    if recipient_data.get("lockbalance", False):
+        return await message.reply_text(
+            f"🔒 {recipient_name or 'This user'} has their balance locked!\n"
+            f"Ask them to use /unlockbalance before receiving payments."
+        )
+
+    # Check balance
+    if sender_data.get("balance", 0) < amount:
+        return await message.reply_text("❌ Insufficient balance.")
+
+    # Process transaction
     await user_collection.update_one({'id': sender_id}, {'$inc': {'balance': -amount}})
     await user_collection.update_one({'id': recipient_id}, {'$inc': {'balance': amount}})
 
-    updated_sender_balance = await get_balance(sender_id)
-    updated_recipient_balance = await get_balance(recipient_id)
+    new_sender_balance = sender_data.get("balance", 0) - amount
+    new_recipient_balance = recipient_data.get("balance", 0) + amount
 
-    recipient_display = html.escape(recipient_name or str(recipient_id))
-    sender_display = html.escape(message.from_user.first_name or str(sender_id))
+    sender_name = html.escape(message.from_user.first_name)
+    recipient_disp = html.escape(recipient_name or str(recipient_id))
 
+    # Notify sender
     await message.reply_text(
-        f"✅ You paid {amount} coins to {recipient_display}.\n"
-        f"💰 Your New Balance: {updated_sender_balance} coins"
+        f"✅ You paid {amount} coins to {recipient_disp}.\n"
+        f"💰 Your New Balance: {new_sender_balance} coins"
     )
 
+    # Notify recipient
     await client.send_message(
         chat_id=recipient_id,
-        text=f"🎉 You received {amount} coins from {sender_display}!\n"
-             f"💰 Your New Balance: {updated_recipient_balance} coins"
-        )
-
-
-@app.on_message(filters.command("kill"))
-async def kill_handler(client, message):
-    try:
-        print("Kill command triggered")  # Log
-        if message.reply_to_message:
-            user_id = message.reply_to_message.from_user.id
-        else:
-            await message.reply_text("Please reply to a user's message to use /kill.")
-            return
-
-        command_args = message.text.split()
-        if len(command_args) < 2:
-            await message.reply_text("Please specify an option: c / f / b.")
-            return
-
-        option = command_args[1]
-        user_exists = await user_collection.find_one({"id": user_id})
-        if not user_exists:
-            await message.reply_text("User not found in DB.")
-            return
-
-        if option == "f":
-            await user_collection.delete_one({"id": user_id})
-            await message.reply_text("✅ User full data deleted.")
-        elif option == "b":
-            if len(command_args) < 3:
-                await message.reply_text("Provide amount to deduct.")
-                return
-            try:
-                amount = int(command_args[2])
-            except ValueError:
-                await message.reply_text("Invalid amount.")
-                return
-            balance_data = await user_collection.find_one({"id": user_id})
-            current_balance = balance_data.get("balance", 0)
-            new_balance = max(0, current_balance - amount)
-            await user_collection.update_one({"id": user_id}, {"$set": {"balance": new_balance}})
-            await message.reply_text(f"💰 Deducted {amount}. New balance: {new_balance}")
-        else:
-            await message.reply_text("Unknown option.")
-    except Exception as e:
-        print(f"/kill error: {e}")
-        await message.reply_text(f"Error: {e}")
+        text=f"🎉 You received {amount} coins from {sender_name}!\n"
+             f"💰 Your New Balance: {new_recipient_balance} coins"
+    )
