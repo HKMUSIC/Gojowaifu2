@@ -61,27 +61,27 @@ async def wc_join(_, message):
 
     if chat_id not in games:
         games[chat_id] = {
-            "players": [],           # list of user ids
-            "turn_index": 0,         # index into players
-            "mode": 3,               # current minimum letters
-            "level_success": 0,      # successful words count in current level (0..2)
+            "players": [],
+            "turn_index": 0,
+            "mode": 3,
+            "level_success": 0,
             "last_letter": random.choice("abcdefghijklmnopqrstuvwxyz"),
-            "timeout_task": None,    # asyncio.Task
-            "active": False,         # game running
-            "total_words": 0,        # total correct words so far
+            "timeout_task": None,
+            "active": False,
+            "total_words": 0,
         }
 
     game = games[chat_id]
 
     if user.id in game["players"]:
-        return await message.reply_text("⚠ You already joined the lobby.", parse_mode="html")
+        return await message.reply_text("⚠ You already joined the lobby.")
 
     game["players"].append(user.id)
-    await message.reply_text(f"✅ {mention_html(user.id, user.first_name)} joined the lobby.", parse_mode="html")
-    await message.reply_text(f"Players in lobby: {len(game['players'])}. Use /startwordgame to begin.", parse_mode="html")
+    await message.reply_text(f"✅ {mention_html(user.id, user.first_name)} joined the lobby.")
+    await message.reply_text(f"Players in lobby: {len(game['players'])}. Use /startwordgame to begin.")
 
 # ---------------------------
-# /leave - leave lobby or game
+# /leave
 # ---------------------------
 @app.on_message(filters.command("leave"))
 async def wc_leave(_, message):
@@ -89,11 +89,11 @@ async def wc_leave(_, message):
     user = message.from_user
 
     if chat_id not in games:
-        return await message.reply_text("No active lobby or game here.", parse_mode="html")
+        return await message.reply_text("No active lobby or game here.")
 
     game = games[chat_id]
     if user.id not in game["players"]:
-        return await message.reply_text("You are not in the lobby/game.", parse_mode="html")
+        return await message.reply_text("You are not in the lobby/game.")
 
     try:
         idx = game["players"].index(user.id)
@@ -108,7 +108,7 @@ async def wc_leave(_, message):
     except ValueError:
         pass
 
-    await message.reply_text(f"✅ {mention_html(user.id, user.first_name)} left the lobby/game.", parse_mode="html")
+    await message.reply_text(f"✅ {mention_html(user.id, user.first_name)} left the lobby/game.")
 
     if not game["players"]:
         if game.get("timeout_task"):
@@ -117,23 +117,22 @@ async def wc_leave(_, message):
             except:
                 pass
         del games[chat_id]
-        await message.reply_text("Lobby closed (no players).", parse_mode="html")
+        await message.reply_text("Lobby closed (no players).")
 
 # ---------------------------
-# /startwordgame - start the game
+# /startwordgame
 # ---------------------------
 @app.on_message(filters.command("startwordgame"))
 async def wc_start(_, message):
     chat_id = message.chat.id
 
     if chat_id not in games or len(games[chat_id]["players"]) < 2:
-        return await message.reply_text("Need at least 2 players to start the game.", parse_mode="html")
+        return await message.reply_text("Need at least 2 players to start the game.")
 
     game = games[chat_id]
     if game["active"]:
-        return await message.reply_text("Game already running.", parse_mode="html")
+        return await message.reply_text("Game already running.")
 
-    # init values
     game["active"] = True
     game["mode"] = 3
     game["level_success"] = 0
@@ -147,20 +146,19 @@ async def wc_start(_, message):
         "🎮 <b>WordChain Game Started!</b>\n"
         f"➡ Minimum letters: <b>{game['mode']}</b>\n"
         f"➡ First letter: <b>{html.escape(game['last_letter'])}</b>\n"
-        f"➡ First turn: {mention_html(first_id, first_name)}",
-        parse_mode="html"
+        f"➡ First turn: {mention_html(first_id, first_name)}"
     )
 
     await send_turn_message(chat_id)
 
 # ---------------------------
-# /stopwordgame - stop and cleanup
+# /stopwordgame
 # ---------------------------
 @app.on_message(filters.command("stopwordgame"))
 async def wc_stop(_, message):
     chat_id = message.chat.id
     if chat_id not in games:
-        return await message.reply_text("No active game to stop.", parse_mode="html")
+        return await message.reply_text("No active game to stop.")
 
     game = games[chat_id]
     if game.get("timeout_task"):
@@ -170,16 +168,16 @@ async def wc_stop(_, message):
             pass
 
     del games[chat_id]
-    await message.reply_text("🛑 WordChain game stopped and cleaned up.", parse_mode="html")
+    await message.reply_text("🛑 WordChain game stopped and cleaned up.")
 
 # ---------------------------
-# Helper: compute timeout seconds for current mode
+# Timeout seconds
 # ---------------------------
 def time_for_mode(mode: int) -> int:
     return TIME_PER_MODE.get(mode, 20)
 
 # ---------------------------
-# Send the turn message (with stats) and start timeout
+# Turn message + timeout
 # ---------------------------
 async def send_turn_message(chat_id: int):
     if chat_id not in games:
@@ -199,8 +197,6 @@ async def send_turn_message(chat_id: int):
 
     if len(game["players"]) > 0:
         game["turn_index"] %= len(game["players"])
-    else:
-        game["turn_index"] = 0
 
     current_id = game["players"][game["turn_index"]]
     next_id = game["players"][(game["turn_index"] + 1) % len(game["players"])] if len(game["players"]) > 1 else current_id
@@ -218,7 +214,7 @@ async def send_turn_message(chat_id: int):
         f"🔜 Next: {mention_html(next_id, next_name)}"
     )
 
-    await app.send_message(chat_id, txt, parse_mode="html")
+    await app.send_message(chat_id, txt)
 
     if game.get("timeout_task"):
         try:
@@ -236,6 +232,7 @@ async def send_turn_message(chat_id: int):
                 return
             if not g["players"]:
                 return
+
             try:
                 removed_id = g["players"].pop(g["turn_index"])
             except Exception:
@@ -244,15 +241,14 @@ async def send_turn_message(chat_id: int):
             removed_name = await safe_get_name(chat_id, removed_id)
             await app.send_message(chat_id,
                 f"⏱ <b>Timeout!</b>\n"
-                f"❌ Player removed due to timeout: {mention_html(removed_id, removed_name)}",
-                parse_mode="html"
+                f"❌ Player removed due to timeout: {mention_html(removed_id, removed_name)}"
             )
 
             if len(g["players"]) <= 1:
                 if g["players"]:
                     winner_id = g["players"][0]
                     winner_name = await safe_get_name(chat_id, winner_id)
-                    await app.send_message(chat_id, f"🏆 <b>Winner:</b> {mention_html(winner_id, winner_name)}", parse_mode="html")
+                    await app.send_message(chat_id, f"🏆 <b>Winner:</b> {mention_html(winner_id, winner_name)}")
                 if g.get("timeout_task"):
                     try:
                         g["timeout_task"].cancel()
@@ -264,11 +260,12 @@ async def send_turn_message(chat_id: int):
             g["turn_index"] %= len(g["players"])
             await asyncio.sleep(1)
             await send_turn_message(chat_id)
+
         except asyncio.CancelledError:
             return
         except Exception:
             try:
-                await app.send_message(chat_id, "⚠ An internal error occurred in timeout handler.", parse_mode="html")
+                await app.send_message(chat_id, "⚠ An internal error occurred in timeout handler.")
             except:
                 pass
             return
@@ -277,7 +274,7 @@ async def send_turn_message(chat_id: int):
     game["timeout_task"] = task
 
 # ---------------------------
-# Message handler for answers (only current player allowed)
+# Player answer
 # ---------------------------
 @app.on_message(filters.text & ~filters.command([]))
 async def wc_handle_answer(_, message):
@@ -296,25 +293,26 @@ async def wc_handle_answer(_, message):
 
     game["turn_index"] %= len(game["players"])
     current_player = game["players"][game["turn_index"]]
+
     if user.id != current_player:
         return
 
     word = message.text.strip().lower()
 
     if not word.isalpha():
-        await message.reply_text("❌ Invalid format. Use plain words (letters only).", parse_mode="html")
+        await message.reply_text("❌ Invalid format. Use plain words (letters only).")
         return
 
     if not word.startswith(game["last_letter"]):
-        await message.reply_text(f"❌ Wrong starting letter. Word must start with: <b>{html.escape(game['last_letter'])}</b>", parse_mode="html")
+        await message.reply_text(f"❌ Wrong starting letter. Word must start with: <b>{html.escape(game['last_letter'])}</b>")
         return
 
     if len(word) < game["mode"]:
-        await message.reply_text(f"❌ Word is too short. Minimum letters required: <b>{game['mode']}</b>", parse_mode="html")
+        await message.reply_text(f"❌ Word is too short. Minimum letters required: <b>{game['mode']}</b>")
         return
 
     if WORDS and word not in WORDS:
-        await message.reply_text("❌ Not a valid English word (according to wordlist).", parse_mode="html")
+        await message.reply_text("❌ Not a valid English word (according to wordlist).")
         return
 
     if game.get("timeout_task"):
@@ -334,16 +332,14 @@ async def wc_handle_answer(_, message):
     else:
         lvl_msg = None
 
-    await app.send_message(chat_id,
+    await app.send_message(
+        chat_id,
         f"✔ Correct! {mention_html(user.id, user.first_name)} played <b>{html.escape(word)}</b>.\n"
-        + (f"{lvl_msg}" if lvl_msg else ""),
-        parse_mode="html"
+        + (lvl_msg if lvl_msg else "")
     )
 
     if game["players"]:
         game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
-    else:
-        game["turn_index"] = 0
 
     await asyncio.sleep(0.8)
     await send_turn_message(chat_id)
