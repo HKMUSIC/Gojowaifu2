@@ -136,11 +136,16 @@ async def cashout_button(client, query: CallbackQuery):
     if query.from_user.id != uid:
         return await query.answer("⚠ Not your game!", show_alert=True)
 
-    # 🔒 LOCK CHECK (NEW)
-    user = await get_user(uid)
-    if user["lockbalance"]:
+    # LOCK CHECK
+    user = await user_collection.find_one({"id": uid})
+    if not user:
+        await user_collection.insert_one({"id": uid, "balance": 0, "lockbalance": False})
+        user = await user_collection.find_one({"id": uid})
+
+    if user.get("lockbalance", False):
         return await query.answer("🔒 Your balance is locked!\nUse /unlockbalance first.", show_alert=True)
 
+    # FIND GAME
     game = await mines_games.find_one({"user_id": uid, "active": True})
     if not game:
         return await query.answer("Game finished!")
@@ -149,9 +154,19 @@ async def cashout_button(client, query: CallbackQuery):
     multiplier = game["multiplier"]
     earnings = int(bet * multiplier)
 
-    await users.update_one({"id": uid}, {"$inc": {"balance": earnings}})
-    await mines_games.update_one({"user_id": uid}, {"$set": {"active": False}})
+    # 🔥 FIX — correct collection
+    await user_collection.update_one(
+        {"id": uid},
+        {"$inc": {"balance": earnings}}
+    )
 
+    # disable game
+    await mines_games.update_one(
+        {"user_id": uid},
+        {"$set": {"active": False}}
+    )
+
+    # update UI
     await query.message.edit(
         f"🟩 <b>CASHOUT SUCCESS!</b>\n"
         f"Bet: <b>{bet}</b>\nMultiplier: <b>{multiplier}x</b>\n"
