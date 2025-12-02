@@ -1,6 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import random
+from TEAMZYRO import app   # or bot / ZYRO etc.
 from motor.motor_asyncio import AsyncIOMotorClient
 
 mongo = AsyncIOMotorClient("mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
@@ -21,7 +22,7 @@ async def get_user(user_id):
     return user
 
 
-@Client.on_message(filters.command("mines"))
+@app.on_message(filters.command("mines"))
 async def start_mines(client, message):
 
     user = await get_user(message.from_user.id)
