@@ -61,6 +61,9 @@ async def start_game(_, message):
     game["total_words"] = 0
     game["last_letter"] = random.choice("abcdefghijklmnopqrstuvwxyz")
 
+    game["initial_players"] = len(game["players"])   # ✔ total players saved
+    game["start_time"] = asyncio.get_event_loop().time()  # ✔ game timer started
+
     await message.reply(
         f"🎮 Word Game Started!\n"
         f"➡ First letter: **{game['last_letter']}**\n"
@@ -68,7 +71,6 @@ async def start_game(_, message):
     )
 
     await next_turn(message)
-
 # -------------------------------------------------------
 # /stopgame
 # -------------------------------------------------------
