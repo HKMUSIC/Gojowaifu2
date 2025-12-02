@@ -26,10 +26,16 @@ async def join_game(_, message):
             "last_letter": random.choice("abcdefghijklmnopqrstuvwxyz"),
             "timeout_task": None,
             "active": False,
-            "total_words": 0
+            "total_words": 0,
+            "start_time": None,
+            "longest_word": "",
+            "initial_players": 0
         }
 
     game = games[chat_id]
+
+    if game["active"]:
+        return await message.reply("❌ Game already started, you cannot join now!")
 
     if message.from_user.id in game["players"]:
         return await message.reply("Already joined!")
@@ -84,13 +90,20 @@ async def next_turn(message):
     chat_id = message.chat.id
     game = games[chat_id]
 
-    current_player = game["players"][game["turn_index"]]
-    user = await app.get_chat_member(chat_id, current_player)
-    mention = user.user.mention
+    # Current turn player
+    current_player_id = game["players"][game["turn_index"]]
+    current_member = await app.get_chat_member(chat_id, current_player_id)
+    current_mention = current_member.user.mention
+
+    # Next turn player
+    next_index = (game["turn_index"] + 1) % len(game["players"])
+    next_player_id = game["players"][next_index]
+    next_member = await app.get_chat_member(chat_id, next_player_id)
+    next_mention = next_member.user.mention
 
     # TIME SETTINGS BY MODE
     time_map = {
-        3: 40, 
+        3: 40,
         4: 35,
         5: 30,
         6: 30,
@@ -99,27 +112,61 @@ async def next_turn(message):
         9: 20,
         10: 20
     }
-
     turn_time = time_map.get(game["mode"], 20)
 
-    msg = await message.reply(
-        f"Bot Turn: {mention} ⭐\n"
-        f"(Next: {mention})\n"
+    await message.reply(
+        f"Turn: {current_mention} ⭐\n"
+        f"(Next: {next_mention})\n"
         f"Your word must start with **{game['last_letter'].upper()}** "
         f"and include at least **{game['mode']} letters**.\n"
         f"You have {turn_time}s to answer.\n"
         f"Players remaining: {len(game['players'])}/{len(game['players'])}\n"
         f"Total words: {game['total_words']}"
     )
+async def timeout():
+    await asyncio.sleep(turn_time)
 
-    async def timeout():
-        await asyncio.sleep(turn_time)
-        kicked = game["players"].pop(game["turn_index"])
-        await message.reply(f"⏱ Timeout! Player removed: `{kicked}`")
+    # Remove player
+    kicked_id = game["players"].pop(game["turn_index"])
+    kicked_member = await app.get_chat_member(chat_id, kicked_id)
+    kicked_mention = kicked_member.user.mention
 
-        if len(game["players"]) < 2:
-            del games[chat_id]
-            return await message.reply("Game ended — not enough players.")
+    await message.reply(f"{kicked_mention} ran out of time! They have been eliminated.")
+
+    # Check if winner remains
+    if len(game["players"]) == 1:
+        winner_id = game["players"][0]
+        winner_member = await app.get_chat_member(chat_id, winner_id)
+        winner_mention = winner_member.user.mention
+
+        total_players = game["initial_players"]
+        total_words = game["total_words"]
+        longest_word = game["longest_word"]
+
+        # Calculate game time
+        duration = int(asyncio.get_event_loop().time() - game["start_time"])
+        hours = duration // 3600
+        minutes = (duration % 3600) // 60
+        seconds = duration % 60
+
+        await message.reply(
+            f"🎉 {winner_mention} won the game out of {total_players} players!\n"
+            f"🏆 Total words: {total_words}\n"
+            f"🔠 Longest word: {longest_word}\n"
+            f"⏳ Game length: {hours:02}:{minutes:02}:{seconds:02}"
+        )
+
+        del games[chat_id]
+        return
+
+    # If still enough players → continue game
+    if len(game["players"]) < 2:
+        del games[chat_id]
+        return await message.reply("Game ended — not enough players.")
+
+    # Move turn to next player
+    game["turn_index"] %= len(game["players"])
+    await next_turn(message)
 
         game["turn_index"] %= len(game["players"])
         await next_turn(message)
@@ -128,7 +175,6 @@ async def next_turn(message):
         game["timeout_task"].cancel()
 
     game["timeout_task"] = asyncio.create_task(timeout())
-
 # -------------------------------------------------------
 # WORD INPUT HANDLING
 # -------------------------------------------------------
