@@ -48,6 +48,6 @@ async def looks_cmd(client, message: Message):
     loves = random.randint(1, 100)
 
     text = f"""
-😎 **{target.first_name}'s Loves level:** {loves}%
+❤️ **{target.first_name}'s Loves level:** {loves}%
 """
     await message.reply(text)
