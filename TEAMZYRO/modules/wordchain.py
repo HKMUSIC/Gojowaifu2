@@ -41,8 +41,9 @@ games = {}
 
 # Helper: nicely mention user with HTML
 def mention_html(user_id, name):
-    safe = html.escape(name)
-    return f"<a href='tg://user?id={user_id}'>{safe}</a>"
+    safe_name = html.escape(name).replace('"', '&quot;')
+    return f"<a href=\"tg://user?id={user_id}\">{safe_name}</a>"
+
 
 # ---------------------------
 # /join - join lobby
