@@ -3,7 +3,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 import random
 from motor.motor_asyncio import AsyncIOMotorClient
 from TEAMZYRO import app   # YOUR BOT INSTANCE
-
+from TEAMZYRO import user_collection
 
 mongo = AsyncIOMotorClient("mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 db = mongo["GAME_DB"]
