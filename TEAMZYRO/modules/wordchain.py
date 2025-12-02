@@ -1,123 +1,145 @@
-import json
+import asyncio
 import random
-from telegram import Update
-from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters
+from pyrogram import Client, filters
+from pyrogram.types import Message
 
-WORDLIST = []
-ACTIVE_GAMES = {}
-
-# Load English words
-def load_words():
-    global WORDLIST
-    with open("downloads/words.txt", "r") as f:
-        WORDLIST = [w.strip().lower() for w in f.readlines() if len(w.strip()) > 2]
-
-load_words()
+games = {}  # Stores active games
 
 
-# ----------------------------
-# START GAME
-# ----------------------------
-def wordchain_start(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
+class WordGame:
+    def __init__(self, chat_id):
+        self.chat_id = chat_id
+        self.players = []
+        self.used_words = set()
+        self.current_player = 0
+        self.game_running = False
+        self.letter_limit = 3
+        self.turns = 0
+        self.timeout = 20
 
-    if chat_id in ACTIVE_GAMES:
-        return update.message.reply_text("⚠️ A wordchain game is already running here!")
+        with open("downloads/words.txt", "r") as f:
+            self.words = {w.strip().lower() for w in f.readlines() if w.strip()}
 
-    ACTIVE_GAMES[chat_id] = {
-        "players": [],
-        "current_word": None,
-        "turn": 0,
-        "running": True
-    }
+    def next_player(self):
+        self.current_player = (self.current_player + 1) % len(self.players)
+        return self.players[self.current_player]
 
-    update.message.reply_text(
-        "🎮 *WordChain Game Started!*\nSend /join to join the game.",
-        parse_mode="Markdown"
-    )
-
-
-# ----------------------------
-# JOIN GAME
-# ----------------------------
-def join_game(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    user = update.effective_user
-
-    if chat_id not in ACTIVE_GAMES:
-        return update.message.reply_text("❌ No game running. Start using /wordchainstart")
-
-    if user.id in ACTIVE_GAMES[chat_id]["players"]:
-        return update.message.reply_text("You already joined!")
-
-    ACTIVE_GAMES[chat_id]["players"].append(user.id)
-    update.message.reply_text(f"🔥 {user.first_name} joined the game!")
+    def increase_limit(self):
+        if self.letter_limit < 10:
+            self.letter_limit += 1
 
 
-# ----------------------------
-# STOP GAME
-# ----------------------------
-def wordchain_stop(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
+# -------------------------------
+# /join command
+# -------------------------------
+@Client.on_message(filters.command("join"))
+async def join_wordgame(_, m: Message):
+    chat = m.chat.id
+    user = m.from_user.id
 
-    if chat_id not in ACTIVE_GAMES:
-        return update.message.reply_text("❌ No active WordChain game.")
+    if chat not in games:
+        games[chat] = WordGame(chat)
 
-    del ACTIVE_GAMES[chat_id]
-    update.message.reply_text("🛑 WordChain game stopped!")
+    game = games[chat]
+
+    if game.game_running:
+        return await m.reply("⚠ Game already started!")
+
+    if user in game.players:
+        return await m.reply("You already joined!")
+
+    game.players.append(user)
+    await m.reply(f"➕ **{m.from_user.first_name} joined the game!**")
 
 
-# ----------------------------
-# HANDLE WORD ANSWERS
-# ----------------------------
-def handle_words(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    msg = update.message.text.lower()
+# -------------------------------
+# /startgame command
+# -------------------------------
+@Client.on_message(filters.command("startgame"))
+async def start_wordgame(_, m: Message):
+    chat = m.chat.id
+    if chat not in games:
+        return await m.reply("No game lobby! Use /join first.")
 
-    if chat_id not in ACTIVE_GAMES:
-        return
+    game = games[chat]
 
-    game = ACTIVE_GAMES[chat_id]
+    if len(game.players) < 2:
+        return await m.reply("❗ Need at least 2 players to start.")
 
-    if not game["players"]:
-        return update.message.reply_text("⚠️ No players joined yet!")
+    game.game_running = True
+    first = game.players[0]
 
-    current_player = game["players"][game["turn"]]
+    await m.reply(f"🎮 **WordChain Game Started!**\n"
+                  f"▶ First turn: { (await _.get_users(first)).first_name }\n"
+                  f"Letter requirement: **{game.letter_limit} letters**")
 
-    # Check turn
-    if update.effective_user.id != current_player:
-        return
+    asyncio.create_task(run_turn(_, m))
 
-    # First word
-    if not game["current_word"]:
-        if msg in WORDLIST:
-            game["current_word"] = msg
-            game["turn"] = (game["turn"] + 1) % len(game["players"])
-            return update.message.reply_text(f"✔ Word accepted: *{msg}*", parse_mode="Markdown")
-        else:
-            return update.message.reply_text("❌ Invalid word!")
 
-    # Check starts with last letter
-    if msg[0] != game["current_word"][-1]:
-        return update.message.reply_text(
-            f"❌ Your word must begin with *{game['current_word'][-1]}*",
-            parse_mode="Markdown"
+# -------------------------------
+# Turn System
+# -------------------------------
+async def run_turn(app: Client, m: Message):
+    chat = m.chat.id
+    game = games[chat]
+
+    while game.game_running and len(game.players) > 1:
+        player_id = game.players[game.current_player]
+        user = await app.get_users(player_id)
+
+        await m.reply(
+            f"⏳ **{user.first_name}'s turn!**\n"
+            f"Word must be ≥ **{game.letter_limit} letters**"
         )
 
-    if msg not in WORDLIST:
-        return update.message.reply_text("❌ Invalid English word!")
+        try:
+            reply = await app.listen(chat, timeout=game.timeout)
 
-    # Success
-    game["current_word"] = msg
-    game["turn"] = (game["turn"] + 1) % len(game["players"])
-    update.message.reply_text(f"✔ Correct! Next word must start with *{msg[-1]}*.", parse_mode="Markdown")
+            if reply.from_user.id != player_id:
+                continue  # Ignore other messages
 
+            word = reply.text.lower().strip()
 
-# ----------------------------
-# ADD HANDLERS
-# ----------------------------
-def add_wordchain_handlers(dp):
-    dp.add_handler(CommandHandler("wordchainstart", wordchain_start))
-    dp.add_handler(CommandHandler("wordchainstop", wordchain_stop))
-    dp.add_handler(CommandHandler("join", join_game))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_words))
+            # Validate word
+            if len(word) < game.letter_limit:
+                await m.reply(f"❌ Word too short! Eliminated: {user.first_name}")
+                game.players.remove(player_id)
+                continue
+
+            if word not in game.words:
+                await m.reply(f"❌ Invalid word! Eliminated: {user.first_name}")
+                game.players.remove(player_id)
+                continue
+
+            if word in game.used_words:
+                await m.reply(f"❌ Word already used! Eliminated: {user.first_name}")
+                game.players.remove(player_id)
+                continue
+
+            game.used_words.add(word)
+            game.turns += 1
+
+            # Increase limit every 5 turns
+            if game.turns % 5 == 0:
+                game.increase_limit()
+                await m.reply(f"🔥 Letter limit increased to **{game.letter_limit}**!")
+
+            # Next player
+            game.next_player()
+
+        except asyncio.TimeoutError:
+            await m.reply(f"⌛ Timeout! Eliminated: {user.first_name}")
+            game.players.remove(player_id)
+            if len(game.players) <= 1:
+                break
+
+    # Winner
+    if len(game.players) == 1:
+        winner_id = game.players[0]
+        winner = await app.get_users(winner_id)
+
+        await m.reply(f"👑 Winner: **{winner.first_name}** 🎉")
+    else:
+        await m.reply("Game ended.")
+
+    del games[chat]
