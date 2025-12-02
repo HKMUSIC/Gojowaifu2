@@ -1,12 +1,10 @@
-from pyrogram import Client, filters
+from TEAMZYRO import ZYRO as app
+from pyrogram import filters
 import asyncio
 import random
-
-app = Client("wordgame", api_id=24965086, api_hash="b9c764ce47c010e1a887f19fea54f648")
-
-# Load word list
 import os
 
+# Load word list
 FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "words.txt")
 
 with open(FILE_PATH, "r") as f:
@@ -85,23 +83,20 @@ async def next_turn(message):
     game = games[chat_id]
 
     current_player = game["players"][game["turn_index"]]
+    user = await app.get_chat_member(chat_id, current_player)
 
     msg = await message.reply(
-        f"🎯 **Turn:** {message.chat.get_member(current_player).user.first_name}\n"
+        f"🎯 **Turn:** {user.user.first_name}\n"
         f"➡ Word must start with: **{game['last_letter']}**\n"
         f"➡ Minimum letters: **{game['mode']}**\n"
         f"⏳ You have 15 seconds!"
     )
 
-    # timeout kick
     async def timeout():
         await asyncio.sleep(15)
         try:
             kicked = game["players"].pop(game["turn_index"])
-            await message.reply(
-                f"⏱ Timeout! Player kicked from game.\n"
-                f"🚫 Removed: `{kicked}`"
-            )
+            await message.reply(f"⏱ Timeout! Player removed: `{kicked}`")
         except:
             return
 
@@ -112,7 +107,6 @@ async def next_turn(message):
         game["turn_index"] %= len(game["players"])
         await next_turn(message)
 
-    # start timeout
     if game["timeout_task"]:
         game["timeout_task"].cancel()
 
@@ -132,33 +126,26 @@ async def game_turn(_, message):
     if not game["active"]:
         return
 
-    # must be the current player
     player = game["players"][game["turn_index"]]
     if message.from_user.id != player:
         return
 
     word = message.text.lower()
 
-    # check starting letter
     if not word.startswith(game["last_letter"]):
         return await message.reply("❌ Wrong starting letter!")
 
-    # check minimum length
     if len(word) < game["mode"]:
         return await message.reply(f"❗ Word must be at least **{game['mode']}** letters!")
 
-    # dictionary check
     if word not in WORDS:
         return await message.reply("❗ Not a valid English word!")
 
-    # correct → update last letter
     game["last_letter"] = word[-1]
 
-    # increase mode up to 10
     if game["mode"] < 10:
         game["mode"] += 1
 
-    # stop timeout
     if game["timeout_task"]:
         game["timeout_task"].cancel()
 
@@ -168,11 +155,5 @@ async def game_turn(_, message):
         f"➡ Next minimum letters: **{game['mode']}**"
     )
 
-    # next player
     game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
-
     await next_turn(message)
-
-# -------------------------------------------------------
-print("Bot Running...")
-app.run()
