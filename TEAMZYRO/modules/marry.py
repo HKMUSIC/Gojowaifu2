@@ -4,17 +4,13 @@ from pyrogram import filters, types as t
 from TEAMZYRO import ZYRO as bot
 from TEAMZYRO import user_collection, collection
 
-# Cooldown cache
-marry_lock = {}
-
-
 @bot.on_message(filters.command("marry"))
 async def marry_cmd(_, message: t.Message):
     user_id = message.from_user.id
     mention = message.from_user.mention
 
     try:
-        # ----- Fetch or Create User -----
+        # Get or create user
         user_data = await user_collection.find_one({"id": user_id})
         if not user_data:
             user_data = {
@@ -26,7 +22,7 @@ async def marry_cmd(_, message: t.Message):
             }
             await user_collection.insert_one(user_data)
 
-        # ----- Cooldown Check (10 min) -----
+        # Cooldown
         last_marry = user_data.get("last_marry_time")
         if last_marry:
             elapsed = datetime.utcnow() - last_marry
@@ -38,27 +34,28 @@ async def marry_cmd(_, message: t.Message):
                     f"⏳ **Wait `{mins}m {secs}s` before using /marry again.**"
                 )
 
-        # ----- Dice Animation -----
-        dice_msg = await message.reply_dice("💘")
+        # SEND DICE (Pyrogram v2 FIX)
+        dice_msg = await bot.send_dice(
+            chat_id=message.chat.id,
+            emoji="💘"
+        )
+
         await asyncio.sleep(2)
+        value = dice_msg.dice.value
 
-        # ----- Pick Random Character -----
-        pipeline = [{"$sample": {"size": 1}}]
-        cursor = collection.aggregate(pipeline)
-        characters = await cursor.to_list(length=1)
+        # Random Character
+        character = await collection.aggregate([{"$sample": {"size": 1}}]).to_list(length=1)
+        if not character:
+            return await message.reply_text("❌ No characters available!")
+        char = character[0]
 
-        if not characters:
-            return await message.reply_text("❌ No characters available right now!")
-
-        char = characters[0]
-
-        # ----- Update Marry Time -----
+        # Save marry cooldown
         await user_collection.update_one(
             {"id": user_id},
             {"$set": {"last_marry_time": datetime.utcnow()}}
         )
 
-        # ----- Send Character Photo -----
+        # Send output
         caption = (
             f"🎉 **ᴄᴏɴɢʀᴀᴛᴜʟᴀᴛɪᴏɴꜱ! {mention}** 🎉\n"
             f"**ʏᴏᴜ ᴀʀᴇ ɴᴏᴡ ᴍᴀʀʀɪᴇᴅ! ʜᴇʀᴇ ɪꜱ ʏᴏᴜʀ ᴄʜᴀʀᴀᴄᴛᴇʀ:**\n\n"
@@ -67,7 +64,7 @@ async def marry_cmd(_, message: t.Message):
             f"📺 **Anime:** `{char['anime']}`"
         )
 
-        await message.reply_photo(photo=char["img_url"], caption=caption)
+        await message.reply_photo(char["img_url"], caption=caption)
 
     except Exception as e:
         print("MARRY ERROR:", e)
