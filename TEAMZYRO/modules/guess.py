@@ -46,77 +46,82 @@ async def guess(client: Client, message: Message):
 
     name_parts = last_characters[chat_id]['name'].lower().split()
     
-    if sorted(name_parts) == sorted(guess.split()) or any(part == guess for part in name_parts):
-        first_correct_guesses[chat_id] = user_id
-        for task in asyncio.all_tasks():
-            if task.get_name() == f"expire_session_{chat_id}":
-                task.cancel()
-                break
+if sorted(name_parts) == sorted(guess.split()) or any(part == guess for part in name_parts):
+    first_correct_guesses[chat_id] = user_id
+    for task in asyncio.all_tasks():
+        if task.get_name() == f"expire_session_{chat_id}":
+            task.cancel()
+            break
 
-        timestamp = last_characters[chat_id].get('timestamp')
-        if timestamp:
-            time_taken = time.time() - timestamp
-            time_taken_str = f"{int(time_taken)} seconds"
-        else:
-            time_taken_str = "Unknown time"
+    timestamp = last_characters[chat_id].get('timestamp')
+    if timestamp:
+        time_taken = time.time() - timestamp
+        time_taken_str = f"{int(time_taken)} seconds"
+    else:
+        time_taken_str = "Unknown time"
 
-        if user_id not in user_guess_progress or user_guess_progress[user_id]["date"] != today:
-            user_guess_progress[user_id] = {"date": today, "count": 0}
+    if user_id not in user_guess_progress or user_guess_progress[user_id]["date"] != today:
+        user_guess_progress[user_id] = {"date": today, "count": 0}
 
-        user_guess_progress[user_id]["count"] += 1
+    user_guess_progress[user_id]["count"] += 1
+    
+    # Fetch user from MongoDB
+    user = await user_collection.find_one({'id': user_id})
+    if user:
+        update_fields = {}
+        if message.from_user.username != user.get('username'):
+            update_fields['username'] = message.from_user.username
+        if message.from_user.first_name != user.get('first_name'):
+            update_fields['first_name'] = message.from_user.first_name
+        if update_fields:
+            await user_collection.update_one({'id': user_id}, {'$set': update_fields})
         
-        # Fetch user from MongoDB
-        user = await user_collection.find_one({'id': user_id})
-        if user:
-            update_fields = {}
-            if message.from_user.username != user.get('username'):
-                update_fields['username'] = message.from_user.username
-            if message.from_user.first_name != user.get('first_name'):
-                update_fields['first_name'] = message.from_user.first_name
-            if update_fields:
-                await user_collection.update_one({'id': user_id}, {'$set': update_fields})
-            
-            await user_collection.update_one({'id': user_id}, {'$push': {'characters': last_characters[chat_id]}})
-      
-        else:
-            await user_collection.insert_one({
-                'id': user_id,
-                'username': message.from_user.username,
-                'first_name': message.from_user.first_name,
-                'characters': [last_characters[chat_id]],
-            })
+        await user_collection.update_one({'id': user_id}, {'$push': {'characters': last_characters[chat_id]}})
+  
+    else:
+        await user_collection.insert_one({
+            'id': user_id,
+            'username': message.from_user.username,
+            'first_name': message.from_user.first_name,
+            'characters': [last_characters[chat_id]],
+        })
 
-        # Update group count in top_global_groups_collection (new code)
-        if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
-            group_name = message.chat.title or f"Group_{chat_id}"
-            await top_global_groups_collection.update_one(
-                {'chat_id': chat_id},
-                {
-                    '$set': {'group_name': group_name},
-                    '$inc': {'count': 1}
-                },
-                upsert=True
-            )
+    # AUTO UNLOCK BALANCE WHEN GUESS IS CORRECT
+    await user_collection.update_one(
+        {"id": user_id},
+        {"$set": {"lockbalance": False}}
+    )
 
-        await react_to_message(chat_id, message.id)
+    # Update group count in top_global_groups_collection
+    if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
+        group_name = message.chat.title or f"Group_{chat_id}"
+        await top_global_groups_collection.update_one(
+            {'chat_id': chat_id},
+            {
+                '$set': {'group_name': group_name},
+                '$inc': {'count': 1}
+            },
+            upsert=True
+        )
 
-        # Fetch user again to update balance
-        user = await user_collection.find_one({'id': user_id})
-        if user:
-            current_balance = user.get('balance', 0)
-            new_balance = current_balance + 40
-            await user_collection.update_one({'id': user_id}, {'$set': {'balance': new_balance}})
-            
-            await message.reply_text(
-                f"🎉 Congratulations! You have earned 40 coins for guessing correctly! \nYour new balance is {new_balance} coins."
-            )
-        else:
-            await user_collection.insert_one({'id': user_id, 'balance': 40})
-            
-            await message.reply_text(
-                "🎉 Congratulations! You have earned 40 coins for guessing correctly! \nYour new balance is 40 coins."
-            )
+    await react_to_message(chat_id, message.id)
 
+    # Fetch user again to update balance
+    user = await user_collection.find_one({'id': user_id})
+    if user:
+        current_balance = user.get('balance', 0)
+        new_balance = current_balance + 40
+        await user_collection.update_one({'id': user_id}, {'$set': {'balance': new_balance}})
+        
+        await message.reply_text(
+            f"🎉 Congratulations! You have earned 40 coins for guessing correctly! \nYour new balance is {new_balance} coins."
+        )
+    else:
+        await user_collection.insert_one({'id': user_id, 'balance': 40})
+        
+        await message.reply_text(
+            "🎉 Congratulations! You have earned 40 coins for guessing correctly! \nYour new balance is 40 coins."
+        )
         keyboard = [[InlineKeyboardButton("See Harem", switch_inline_query_current_chat=f"collection.{user_id}")]]
         await message.reply_text(
             f'🌟 <b><a href="tg://user?id={user_id}">{escape(message.from_user.first_name)}</a></b>, you\'ve captured a new character! 🎊\n\n'
