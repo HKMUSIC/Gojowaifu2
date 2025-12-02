@@ -3,7 +3,7 @@ import requests
 from pyrogram import Client, filters
 from pymongo import ReturnDocument
 from gridfs import GridFS
-from TEAMZYRO import app, CHARA_CHANNEL_ID, SUPPORT_CHAT, OWNER_ID, collection, user_collection, db, SUDO, rarity_map, ZYRO, require_power
+from TEAMZYRO import application, CHARA_CHANNEL_ID, SUPPORT_CHAT, OWNER_ID, collection, user_collection, db, SUDO, rarity_map, ZYRO, require_power
 
 # Wrong format instruction
 WRONG_FORMAT_TEXT = """Wrong ❌ format...  eg. /upload reply to photo muzan-kibutsuji Demon-slayer 3
@@ -63,7 +63,7 @@ def upload_to_catbox(file_path=None, file_url=None, expires=None, secret=None):
 import asyncio
 upload_lock = asyncio.Lock()
 
-@app.on_message(filters.command(["upload"]))
+@Zyro.on_message(filters.command(["upload"]))
 @require_power("add_character")
 async def ul(client, message):
     global upload_lock
