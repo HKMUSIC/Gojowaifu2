@@ -3,8 +3,8 @@ from pyrogram import Client, filters, types as t
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime, timedelta
 from TEAMZYRO import ZYRO as bot
-from TEAMZYRO import user_collection
-from TEAMZYRO import collection
+from TEAMZYRO import user_collection, collection  # <-- both pymongo
+
 
 @bot.on_message(filters.command(["marry"]))
 async def marry_cmd(_, message: t.Message):
@@ -12,10 +12,9 @@ async def marry_cmd(_, message: t.Message):
     mention = message.from_user.mention
 
     try:
-        # Fetch user data
-        user_data = await user_collection.find_one({"id": user_id})
+        # Fetch user
+        user_data = user_collection.find_one({"id": user_id})
 
-        # If new user create entry
         if not user_data:
             user_data = {
                 "id": user_id,
@@ -24,9 +23,9 @@ async def marry_cmd(_, message: t.Message):
                 "last_daily_reward": None,
                 "last_marry_time": None
             }
-            await user_collection.insert_one(user_data)
+            user_collection.insert_one(user_data)
 
-        # Check Marry Cooldown (10 minutes)
+        # Cooldown (10 minutes)
         last_marry = user_data.get("last_marry_time")
 
         if last_marry:
@@ -39,23 +38,20 @@ async def marry_cmd(_, message: t.Message):
                     f"⏳ **You must wait `{mins}m {secs}s` before using /marry again!**"
                 )
 
-        # STEP 1 → Send a dice
-        dice_msg = await message.reply_dice(emoji="🎲")
+        # Send dice
+        await message.reply_dice("🎲")
         await asyncio.sleep(2)
 
-        # STEP 2 → Get a random character
-        pipeline = [
-            {"$sample": {"size": 1}}
-        ]
-        cursor = collection.aggregate(pipeline)
-        characters = await cursor.to_list(length=1)
+        # Random waifu using PyMongo (sync aggregate)
+        pipeline = [{"$sample": {"size": 1}}]
+        characters = list(collection.aggregate(pipeline))
 
         if not characters:
             return await message.reply_text("❌ No characters found!")
 
         char = characters[0]
 
-        # STEP 3 → Send Marriage Result
+        # Prepare caption
         caption = (
             f"🎉 **CONGRATULATIONS! {mention}** 🎉\n"
             f"You are now *MARRIED!* 💍\n\n"
@@ -64,14 +60,15 @@ async def marry_cmd(_, message: t.Message):
             f"📺 **Anime:** `{char['anime']}`"
         )
 
+        # Send image + caption
         await message.reply_photo(photo=char['img_url'], caption=caption)
 
-        # STEP 4 → Update marry cooldown time
-        await user_collection.update_one(
+        # Update marry time
+        user_collection.update_one(
             {"id": user_id},
             {"$set": {"last_marry_time": datetime.utcnow()}}
         )
 
     except Exception as e:
-        print(f"Error in marry command: {e}")
+        print("Error in marry command:", e)
         await message.reply_text("❌ Something went wrong in /marry!")
