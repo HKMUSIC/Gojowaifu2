@@ -225,19 +225,21 @@ if len(word) > len(game["longest_word"]):
 # Send "word is accepted"
 await message.reply(f"{word} is accepted.")
 
-    # REPEAT LEVEL 3 TIMES BEFORE INCREMENT
-    if game["mode"] < 10:
-        game["repeat"] += 1
-        if game["repeat"] == 3:
-            game["repeat"] = 0
-            game["mode"] += 1
-
-    # Level 10 stays forever
-    if game["mode"] == 10:
+# REPEAT LEVEL 3 TIMES BEFORE INCREMENT
+if game["mode"] < 10:
+    game["repeat"] += 1
+    if game["repeat"] == 3:
         game["repeat"] = 0
+        game["mode"] += 1
 
-    if game["timeout_task"]:
-        game["timeout_task"].cancel()
+# Level 10 stays forever
+if game["mode"] == 10:
+    game["repeat"] = 0
 
-    game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
-    await next_turn(message)
+# Cancel previous timeout
+if game["timeout_task"]:
+    game["timeout_task"].cancel()
+
+# Move to next player
+game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
+await next_turn(message)
