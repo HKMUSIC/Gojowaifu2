@@ -13,7 +13,6 @@ BASE_DIR = os.path.dirname(__file__)  # TEAMZYRO/modules
 WORD_FILE = os.path.abspath(os.path.join(BASE_DIR, "..", "words.txt"))
 
 if not os.path.exists(WORD_FILE):
-    # Failsafe: create empty set if missing (bot won't crash)
     WORDS = set()
 else:
     with open(WORD_FILE, "r", encoding="utf-8") as f:
@@ -39,11 +38,18 @@ TIME_PER_MODE = {
 # ---------------------------
 games = {}
 
-# Helper: nicely mention user with HTML
+# Helper: nicely mention user with HTML (escape name safely)
 def mention_html(user_id, name):
-    safe_name = html.escape(name).replace('"', '&quot;')
-    return f"<a href=\"tg://user?id={user_id}\">{safe_name}</a>"
+    safe_name = html.escape(name).replace('"', "&quot;")
+    return f'<a href="tg://user?id={user_id}">{safe_name}</a>'
 
+# Safe helper to get a user's first name; returns string
+async def safe_get_name(chat_id, user_id):
+    try:
+        member = await app.get_chat_member(chat_id, user_id)
+        return member.user.first_name or str(user_id)
+    except Exception:
+        return str(user_id)
 
 # ---------------------------
 # /join - join lobby
@@ -58,7 +64,7 @@ async def wc_join(_, message):
             "players": [],           # list of user ids
             "turn_index": 0,         # index into players
             "mode": 3,               # current minimum letters
-            "level_success": 0,      # number of successful words this level (0..2) -> on 3 -> level up
+            "level_success": 0,      # successful words count in current level (0..2)
             "last_letter": random.choice("abcdefghijklmnopqrstuvwxyz"),
             "timeout_task": None,    # asyncio.Task
             "active": False,         # game running
@@ -72,10 +78,6 @@ async def wc_join(_, message):
 
     game["players"].append(user.id)
     await message.reply_text(f"✅ {mention_html(user.id, user.first_name)} joined the lobby.", parse_mode="HTML")
-
-    # If you want to auto-start on 2 players, comment next block.
-    # We'll keep manual start via /startwordgame
-    # But you can notify how many players joined:
     await message.reply_text(f"Players in lobby: {len(game['players'])}. Use /startwordgame to begin.", parse_mode="HTML")
 
 # ---------------------------
@@ -93,15 +95,17 @@ async def wc_leave(_, message):
     if user.id not in game["players"]:
         return await message.reply_text("You are not in the lobby/game.")
 
-    # If game running and it's this player's turn and there's a timeout task, cancel? We'll remove and continue.
     try:
         idx = game["players"].index(user.id)
         game["players"].pop(idx)
-        # adjust turn_index if needed
         if game["active"]:
             if idx < game["turn_index"]:
                 game["turn_index"] -= 1
-            game["turn_index"] %= max(1, len(game["players"])) if game["players"] else 0
+            # if no players left, set turn_index to 0 (handled below)
+            if game["players"]:
+                game["turn_index"] %= len(game["players"])
+            else:
+                game["turn_index"] = 0
     except ValueError:
         pass
 
@@ -141,7 +145,7 @@ async def wc_start(_, message):
 
     # announce start (no raw user id)
     first_id = game["players"][game["turn_index"]]
-    first_name = (await app.get_chat_member(chat_id, first_id)).user.first_name
+    first_name = await safe_get_name(chat_id, first_id)
     await message.reply_text(
         "🎮 <b>WordChain Game Started!</b>\n"
         f"➡ Minimum letters: <b>{game['mode']}</b>\n"
@@ -188,30 +192,28 @@ async def send_turn_message(chat_id: int):
     if not game["active"]:
         return
 
-    # ensure there are players
     if not game["players"]:
         # cleanup
+        if game.get("timeout_task"):
+            try:
+                game["timeout_task"].cancel()
+            except:
+                pass
         del games[chat_id]
         return
 
     # clamp turn_index
-    game["turn_index"] %= len(game["players"])
+    if len(game["players"]) > 0:
+        game["turn_index"] %= len(game["players"])
+    else:
+        game["turn_index"] = 0
 
     current_id = game["players"][game["turn_index"]]
     next_id = game["players"][(game["turn_index"] + 1) % len(game["players"])] if len(game["players"]) > 1 else current_id
 
-    # fetch user names
-    try:
-        cur_member = await app.get_chat_member(chat_id, current_id)
-        cur_name = cur_member.user.first_name
-    except Exception:
-        cur_name = str(current_id)
-
-    try:
-        next_member = await app.get_chat_member(chat_id, next_id)
-        next_name = next_member.user.first_name
-    except Exception:
-        next_name = str(next_id)
+    # fetch user names safely
+    cur_name = await safe_get_name(chat_id, current_id)
+    next_name = await safe_get_name(chat_id, next_id)
 
     # build message
     txt = (
@@ -240,39 +242,55 @@ async def send_turn_message(chat_id: int):
         try:
             await asyncio.sleep(time_for_mode(game["mode"]))
             # If still active and player didn't answer in time -> eliminate
-            # Player removed
             if chat_id not in games:
                 return
             g = games[chat_id]
             if not g["active"]:
                 return
-            # ensure same turn_index valid
             if not g["players"]:
                 return
+            # remove the current player
             try:
                 removed_id = g["players"].pop(g["turn_index"])
             except Exception:
                 return
-            # announce elimination
+
+            # get a safe name for announcement
+            removed_name = await safe_get_name(chat_id, removed_id)
             await app.send_message(chat_id,
                 f"⏱ <b>Timeout!</b>\n"
-                f"❌ Player removed due to timeout: {mention_html(removed_id, (await app.get_chat_member(chat_id, removed_id)).user.first_name)}",
+                f"❌ Player removed due to timeout: {mention_html(removed_id, removed_name)}",
                 parse_mode="HTML"
             )
+
             # If <=1 player left: declare winner or stop
             if len(g["players"]) <= 1:
                 if g["players"]:
                     winner_id = g["players"][0]
-                    winner_name = (await app.get_chat_member(chat_id, winner_id)).user.first_name
+                    winner_name = await safe_get_name(chat_id, winner_id)
                     await app.send_message(chat_id, f"🏆 <b>Winner:</b> {mention_html(winner_id, winner_name)}", parse_mode="HTML")
+                # cleanup
+                if g.get("timeout_task"):
+                    try:
+                        g["timeout_task"].cancel()
+                    except:
+                        pass
                 del games[chat_id]
                 return
+
             # ensure turn_index within bounds
             g["turn_index"] %= len(g["players"])
             # continue next turn (same function)
             await asyncio.sleep(1)
             await send_turn_message(chat_id)
         except asyncio.CancelledError:
+            return
+        except Exception:
+            # catch-all: prevent worker from crashing the bot
+            try:
+                await app.send_message(chat_id, "⚠ An internal error occurred in timeout handler.", parse_mode="HTML")
+            except:
+                pass
             return
 
     task = asyncio.create_task(_timeout_worker())
@@ -293,9 +311,12 @@ async def wc_handle_answer(_, message):
     if not game["active"]:
         return
 
-    # current player must match
-    # ensure index in range
-    game["turn_index"] %= max(1, len(game["players"]))
+    # ensure players not empty
+    if not game["players"]:
+        return
+
+    # normalize turn_index
+    game["turn_index"] %= len(game["players"])
     current_player = game["players"][game["turn_index"]]
     if user.id != current_player:
         # ignore other players' messages
@@ -303,25 +324,19 @@ async def wc_handle_answer(_, message):
 
     word = message.text.strip().lower()
 
-    # quick validation: alphabets only (allow apostrophe? currently only letters)
+    # quick validation: alphabets only
     if not word.isalpha():
-        await message.reply_text(f"❌ Invalid format. Use plain words (letters only).", parse_mode="HTML")
+        await message.reply_text("❌ Invalid format. Use plain words (letters only).", parse_mode="HTML")
         return
 
     # starting letter check
     if not word.startswith(game["last_letter"]):
-        await message.reply_text(
-            f"❌ Wrong starting letter. Word must start with: <b>{html.escape(game['last_letter'])}</b>",
-            parse_mode="HTML"
-        )
+        await message.reply_text(f"❌ Wrong starting letter. Word must start with: <b>{html.escape(game['last_letter'])}</b>", parse_mode="HTML")
         return
 
     # minimum length check (mode is minimum)
     if len(word) < game["mode"]:
-        await message.reply_text(
-            f"❌ Word is too short. Minimum letters required: <b>{game['mode']}</b>",
-            parse_mode="HTML"
-        )
+        await message.reply_text(f"❌ Word is too short. Minimum letters required: <b>{game['mode']}</b>", parse_mode="HTML")
         return
 
     # dictionary check (if WORDS empty, allow everything)
@@ -350,15 +365,18 @@ async def wc_handle_answer(_, message):
     else:
         lvl_msg = None
 
-    # Notify correct (no forced mention except the reply by player itself)
+    # Notify correct
     await app.send_message(chat_id,
         f"✔ Correct! {mention_html(user.id, user.first_name)} played <b>{html.escape(word)}</b>.\n"
         + (f"{lvl_msg}" if lvl_msg else ""),
         parse_mode="HTML"
     )
 
-    # advance turn (same round)
-    game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
+    # advance turn
+    if game["players"]:
+        game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
+    else:
+        game["turn_index"] = 0
 
     # small delay then send next turn message
     await asyncio.sleep(0.8)
