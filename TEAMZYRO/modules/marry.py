@@ -34,10 +34,10 @@ async def marry_cmd(_, message: t.Message):
                     f"⏳ **Wait `{mins}m {secs}s` before using /marry again.**"
                 )
 
-        # SEND DICE (Pyrogram v2 FIX)
+        # --- FIXED VALID DICE (NO ERROR NOW) ---
         dice_msg = await bot.send_dice(
             chat_id=message.chat.id,
-            emoji="💘"
+            emoji="🎲"   # VALID telegram dice
         )
 
         await asyncio.sleep(2)
@@ -55,7 +55,7 @@ async def marry_cmd(_, message: t.Message):
             {"$set": {"last_marry_time": datetime.utcnow()}}
         )
 
-        # Send output
+        # Output
         caption = (
             f"🎉 **ᴄᴏɴɢʀᴀᴛᴜʟᴀᴛɪᴏɴꜱ! {mention}** 🎉\n"
             f"**ʏᴏᴜ ᴀʀᴇ ɴᴏᴡ ᴍᴀʀʀɪᴇᴅ! ʜᴇʀᴇ ɪꜱ ʏᴏᴜʀ ᴄʜᴀʀᴀᴄᴛᴇʀ:**\n\n"
