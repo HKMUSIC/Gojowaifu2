@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import random
 
-@Client.on_message(filters.command("brain"))
+@app.on_message(filters.command("brain"))
 async def brain_cmd(client: Client, message: Message):
 
     # User must tag (reply) someone
@@ -22,7 +22,7 @@ async def brain_cmd(client: Client, message: Message):
     await message.reply(text)
 
 
-@Client.on_message(filters.command("looks"))
+@app.on_message(filters.command("looks"))
 async def looks_cmd(client, message: Message):
 
     # user must reply/tag someone
