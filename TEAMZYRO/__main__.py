@@ -2,7 +2,8 @@ from TEAMZYRO import *
 import importlib
 import logging
 from TEAMZYRO.modules import ALL_MODULES
-
+from TEAMZYRO.modules.wordchain import add_wordchain_handlers
+add_wordchain_handlers(dp)
 
 def main() -> None:
     for module_name in ALL_MODULES:
