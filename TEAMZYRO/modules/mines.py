@@ -2,16 +2,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from motor.motor_asyncio import AsyncIOMotorClient
 import random
-from TEAMZYRO import app
-from TEAMZYRO import user_collection
-
-
-# -------------------- MONGO SETUP --------------------
-mongo = AsyncIOMotorClient("mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-db = mongo["GAME_DB"]
-
-users = db.users
-mines_games = db.mines_games
+from TEAMZYRO import app, user_collection
 
 
 # -------------------- USER FETCH --------------------
@@ -27,14 +18,19 @@ async def get_user(user_id):
     return user
 
 
+# -------------------- MINES GAMES DATABASE --------------------
+mongo = AsyncIOMotorClient("mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority")
+db = mongo["GAME_DB"]
+mines_games = db.mines_games
+
+
 # -------------------- START MINES --------------------
 @app.on_message(filters.command("mines"))
 async def start_mines(client, message):
 
     parts = message.text.split()
-
     if len(parts) == 1:
-        return await message.reply("Usage:\n`/mines 100` to start with 100 coins.")
+        return await message.reply("Usage: /mines 100")
 
     # bet amount
     try:
@@ -46,30 +42,24 @@ async def start_mines(client, message):
 
     user = await get_user(message.from_user.id)
 
-    # balance lock check
     if user["lockbalance"]:
-        return await message.reply("❌ Your balance is locked! Use /unlockbalance")
+        return await message.reply("❌ Balance locked! Use /unlockbalance")
 
-# balance check
-if user["balance"] < bet:
-    return await message.reply("❌ Not enough balance!")
+    # check balance
+    if user["balance"] < bet:
+        return await message.reply("❌ Not enough balance!")
 
-# REAL balance deduct
-new_balance = user["balance"] - bet
+    # deduct REAL balance
+    new_balance = user["balance"] - bet
+    await user_collection.update_one({"id": user["id"]}, {"$set": {"balance": new_balance}})
 
-await user_collection.update_one(
-    {"id": user["id"]},
-    {"$set": {"balance": new_balance}}
-)
+    # reload user
+    user = await get_user(user["id"])
 
-# reload updated user
-user = await get_user(user["id"])
-
-    
     # create bombs
     bombs = random.sample(range(1, 26), 5)
 
-    # save game session
+    # save game
     await mines_games.update_one(
         {"user_id": user["id"]},
         {"$set": {
@@ -86,47 +76,40 @@ user = await get_user(user["id"])
     keyboard = build_grid(user["id"], [], True)
 
     await message.reply(
-        f"💣 <b>Mines Started!</b>\n"
-        f"Bet: <b>{bet}</b>\nMultiplier: <b>1.0x</b>\nProfit: <b>0</b>",
+        f"💣 <b>Mines Started!</b>\nBet: <b>{bet}</b>\nMultiplier: <b>1.0x</b>\nProfit: <b>0</b>",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
-# -------------------- WHEN USER CLICKS A TILE --------------------
+# -------------------- ON TILE CLICK --------------------
 @app.on_callback_query(filters.regex("^mine_"))
 async def mine_click(client, query: CallbackQuery):
 
-    try:
-        parts = query.data.split("_")
-        owner_id = int(parts[1])
-        pos = int(parts[2])
-    except:
-        return await query.answer("Error!", show_alert=True)
+    parts = query.data.split("_")
+    owner_id = int(parts[1])
+    pos = int(parts[2])
 
-    # only owner can click
     if query.from_user.id != owner_id:
-        return await query.answer("⚠ This is not your game!", show_alert=True)
+        return await query.answer("⚠ Not your game!", show_alert=True)
 
-    # load game
     game = await mines_games.find_one({"user_id": owner_id, "active": True})
     if not game:
-        return await query.answer("Game expired!", show_alert=True)
+        return await query.answer("Game expired!")
 
     bet = game["bet"]
 
-    # bomb clicked
+    # bomb click
     if pos in game["bombs"]:
         await mines_games.update_one({"user_id": owner_id}, {"$set": {"active": False}})
         keyboard = reveal_bombs(owner_id, game["bombs"], game["opened"])
         return await query.message.edit(
-            "💥 <b>BOOM! You hit a bomb.</b>\nGame Over!",
+            "💥 <b>BOOM!</b> You hit a bomb.\nGame Over!",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # safe tile
+    # safe click
     if pos not in game["opened"]:
         game["opened"].append(pos)
-
         multiplier = round(1.0 + 0.30 * len(game["opened"]), 2)
 
         await mines_games.update_one(
@@ -149,7 +132,7 @@ async def mine_click(client, query: CallbackQuery):
     )
 
 
-# -------------------- CASHOUT BUTTON --------------------
+# -------------------- CASHOUT --------------------
 @app.on_callback_query(filters.regex("^cashout_"))
 async def cashout_button(client, query: CallbackQuery):
 
@@ -158,42 +141,37 @@ async def cashout_button(client, query: CallbackQuery):
     if query.from_user.id != uid:
         return await query.answer("⚠ Not your game!", show_alert=True)
 
-    # load user
     user = await get_user(uid)
-
     if user["lockbalance"]:
-        return await query.answer("🔒 Your balance is locked.", show_alert=True)
+        return await query.answer("🔒 Balance is locked!", show_alert=True)
 
-    # load game
     game = await mines_games.find_one({"user_id": uid, "active": True})
     if not game:
-        return await query.answer("Game already finished!")
+        return await query.answer("Game already ended!", show_alert=True)
 
     bet = game["bet"]
     multiplier = game["multiplier"]
-
     earnings = int(bet * multiplier)
 
+    # add REAL money
     new_balance = user["balance"] + earnings
 
-await user_collection.update_one(
-    {"id": uid},
-    {"$set": {"balance": new_balance}}
-)
+    await user_collection.update_one(
+        {"id": uid},
+        {"$set": {"balance": new_balance}}
+    )
 
     # end game
     await mines_games.update_one({"user_id": uid}, {"$set": {"active": False}})
 
     await query.message.edit(
-        f"🟩 <b>CASHOUT SUCCESS</b>\n"
-        f"Bet: <b>{bet}</b>\nMultiplier: <b>{multiplier}x</b>\n"
-        f"Won: <b>{earnings}</b>"
+        f"🟩 <b>CASHOUT SUCCESS</b>\nBet: <b>{bet}</b>\nMultiplier: <b>{multiplier}x</b>\nWon: <b>{earnings}</b>"
     )
 
-    await query.answer("Cashed Out!")
+    await query.answer("Cashed out!")
 
 
-# -------------------- GRID MAKER --------------------
+# -------------------- GRID --------------------
 def build_grid(uid, opened, include_cashout):
 
     keyboard = []
@@ -219,7 +197,7 @@ def build_grid(uid, opened, include_cashout):
     return keyboard
 
 
-# -------------------- REVEAL ALL BOMBS --------------------
+# -------------------- SHOW BOMBS --------------------
 def reveal_bombs(uid, bombs, opened):
 
     keyboard = []
@@ -235,12 +213,7 @@ def reveal_bombs(uid, bombs, opened):
             else:
                 emoji = "⬜"
 
-            row.append(
-                InlineKeyboardButton(
-                    emoji,
-                    callback_data="disabled"
-                )
-            )
+            row.append(InlineKeyboardButton(emoji, callback_data="disabled"))
 
         keyboard.append(row)
 
