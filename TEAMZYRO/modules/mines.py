@@ -3,6 +3,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 from motor.motor_asyncio import AsyncIOMotorClient
 import random
 from TEAMZYRO import app
+from TEAMZYRO import user_collection
 
 
 # -------------------- MONGO SETUP --------------------
@@ -15,14 +16,14 @@ mines_games = db.mines_games
 
 # -------------------- USER FETCH --------------------
 async def get_user(user_id):
-    user = await users.find_one({"id": user_id})
+    user = await user_collection.find_one({"id": user_id})
     if not user:
         user = {
             "id": user_id,
             "balance": 0,
             "lockbalance": False
         }
-        await users.insert_one(user)
+        await user_collection.insert_one(user)
     return user
 
 
@@ -49,16 +50,22 @@ async def start_mines(client, message):
     if user["lockbalance"]:
         return await message.reply("❌ Your balance is locked! Use /unlockbalance")
 
-    # balance check
-    if user["balance"] < bet:
-        return await message.reply("❌ Not enough balance!")
+# balance check
+if user["balance"] < bet:
+    return await message.reply("❌ Not enough balance!")
 
-    # deduct balance
-    await users.update_one({"id": user["id"]}, {"$inc": {"balance": -bet}})
+# REAL balance deduct
+new_balance = user["balance"] - bet
 
-    # reload user (important!)
-    user = await get_user(user["id"])
+await user_collection.update_one(
+    {"id": user["id"]},
+    {"$set": {"balance": new_balance}}
+)
 
+# reload updated user
+user = await get_user(user["id"])
+
+    
     # create bombs
     bombs = random.sample(range(1, 26), 5)
 
@@ -167,8 +174,12 @@ async def cashout_button(client, query: CallbackQuery):
 
     earnings = int(bet * multiplier)
 
-    # add money
-    await users.update_one({"id": uid}, {"$inc": {"balance": earnings}})
+    new_balance = user["balance"] + earnings
+
+await user_collection.update_one(
+    {"id": uid},
+    {"$set": {"balance": new_balance}}
+)
 
     # end game
     await mines_games.update_one({"user_id": uid}, {"$set": {"active": False}})
