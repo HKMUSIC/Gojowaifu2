@@ -198,48 +198,50 @@ async def game_turn(_, message):
 
     word = message.text.lower()
 
-    # Wrong starting letter (with mention)
+    # Wrong starting letter
     if not word.startswith(game["last_letter"]):
         return await message.reply(f"{message.from_user.mention} ❌ Wrong starting letter!")
 
-    # Word too short (with mention)
+    # Word too short
     if len(word) < game["mode"]:
         return await message.reply(
             f"{message.from_user.mention} ❗ Word must be at least **{game['mode']}** letters!"
         )
 
-    # Invalid English word (with mention)
+    # Invalid word
     if word not in WORDS:
         return await message.reply(
             f"{message.from_user.mention} ❗ Not a valid English word!"
         )
 
-# ACCEPTED WORD
-game["last_letter"] = word[-1]
-game["total_words"] += 1
+    # -------------------------------------------------------
+    # ACCEPTED WORD LOGIC (ALL FIXED HERE INSIDE FUNCTION)
+    # -------------------------------------------------------
 
-# UPDATE LONGEST WORD
-if len(word) > len(game["longest_word"]):
-    game["longest_word"] = word
+    game["last_letter"] = word[-1]
+    game["total_words"] += 1
 
-# Send "word is accepted"
-await message.reply(f"{word} is accepted.")
+    # Update longest word
+    if len(word) > len(game["longest_word"]):
+        game["longest_word"] = word
 
-# REPEAT LEVEL 3 TIMES BEFORE INCREMENT
-if game["mode"] < 10:
-    game["repeat"] += 1
-    if game["repeat"] == 3:
+    await message.reply(f"✔ `{word}` is accepted!")
+
+    # Repeat level 3 times before increase
+    if game["mode"] < 10:
+        game["repeat"] += 1
+        if game["repeat"] == 3:
+            game["repeat"] = 0
+            game["mode"] += 1
+
+    if game["mode"] == 10:
         game["repeat"] = 0
-        game["mode"] += 1
 
-# Level 10 stays forever
-if game["mode"] == 10:
-    game["repeat"] = 0
+    # Cancel old timeout
+    if game["timeout_task"]:
+        game["timeout_task"].cancel()
 
-# Cancel previous timeout
-if game["timeout_task"]:
-    game["timeout_task"].cancel()
+    # Next turn
+    game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
 
-# Move to next player
-game["turn_index"] = (game["turn_index"] + 1) % len(game["players"])
-await next_turn(message)
+    await next_turn(message)
