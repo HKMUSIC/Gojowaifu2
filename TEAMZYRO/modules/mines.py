@@ -8,11 +8,33 @@ from TEAMZYRO import app, user_collection
 # -------------------- USER FETCH --------------------
 async def get_user(user_id):
     user = await user_collection.find_one({"id": user_id})
-    if not user:
-        user = {"id": user_id, "balance": 0, "lockbalance": False}
-        await user_collection.insert_one(user)
-    return user
 
+    if not user:
+        user = {
+            "id": user_id,
+            "balance": 0,
+            "lockbalance": False
+        }
+        await user_collection.insert_one(user)
+        return user
+
+    # FIX → if fields missing, add them (without overwriting existing data)
+    update_needed = False
+    update_data = {}
+
+    if "balance" not in user:
+        update_needed = True
+        update_data["balance"] = 0
+
+    if "lockbalance" not in user:
+        update_needed = True
+        update_data["lockbalance"] = False
+
+    if update_needed:
+        await user_collection.update_one({"id": user_id}, {"$set": update_data})
+        user.update(update_data)
+
+    return user
 
 # -------------------- DATABASE --------------------
 mongo = AsyncIOMotorClient("mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority")
@@ -49,10 +71,10 @@ async def start_mines(client, message):
     user = await get_user(message.from_user.id)
 
     if user["lockbalance"]:
-        return await message.reply("❌ Balance locked!")
+        return await message.reply("😞 Balance locked! /unlockbalance first")
 
     if user["balance"] < bet:
-        return await message.reply("❌ Not enough balance!")
+        return await message.reply("😅 Not enough balance!👎")
 
     # deduct balance
     await user_collection.update_one({"id": user["id"]}, {"$set": {"balance": user["balance"] - bet}})
