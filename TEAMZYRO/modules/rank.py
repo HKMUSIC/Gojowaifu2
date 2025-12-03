@@ -1,9 +1,12 @@
+from TEAMZYRO import app   # <<< REQUIRED
+from pyrogram import filters, enums
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
 import html
 import random
-from pyrogram import filters, enums
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+# your collections import
+from TEAMZYRO.database import user_collection, top_global_groups_collection
 # reuse your imports/collections: app, user_collection, top_global_groups_collection
 # PHOTO_URL remains same
 PHOTO_URL = ["https://files.catbox.moe/9j8e6b.jpg"]
