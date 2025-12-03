@@ -29,7 +29,8 @@ async def join_game(_, message):
             "total_words": 0,
             "start_time": None,
             "longest_word": "",
-            "initial_players": 0
+            "initial_players": 0,
+            "countdown": 60
         }
 
     game = games[chat_id]
@@ -40,29 +41,65 @@ async def join_game(_, message):
     if message.from_user.id in game["players"]:
         return await message.reply("Already joined!")
 
-    game["players"].append(message.from_user.id)
-    await message.reply(f"✔ {message.from_user.first_name} joined the game!")
+  user = message.from_user
+mention = f"[{user.first_name}](tg://user?id={user.id})"
 
-# -------------------------------------------------------
-# /startgame
-# -------------------------------------------------------
-@app.on_message(filters.command("startgame"))
-async def start_game(_, message):
-    chat_id = message.chat.id
+await message.reply(f"✔ {mention} joined the game!")
 
-    if chat_id not in games or len(games[chat_id]["players"]) < 2:
-        return await message.reply("Need at least 2 players to start!")
+    
+    # Start countdown only once
+    if chat_id not in start_timers:
+        start_timers[chat_id] = asyncio.create_task(start_countdown(chat_id, message))
 
+# ============================
+# AUTO START + REMINDER SYSTEM
+# ============================
+
+start_timers = {}   # each chat timer
+
+async def start_countdown(chat_id, message):
     game = games[chat_id]
+    game["countdown"] = 60       # default start time
+    game["max_time"] = 150       # max limit
+
+    while game["countdown"] > 0:
+        # Reminders
+        if game["countdown"] in [30, 15]:
+            await message.reply(f"⏳ {game['countdown']} seconds left to join! Use /join")
+
+        if game["countdown"] % 20 == 0:
+            await message.reply(f"⌛ Game starting in {game['countdown']} seconds... /join fast!")
+
+        await asyncio.sleep(1)
+        game["countdown"] -= 1
+
+        # Someone extended time?
+        if game["countdown"] > game["max_time"]:
+            game["countdown"] = game["max_time"]
+
+    # TIME OVER
+    if len(game["players"]) < 2:
+        await message.reply("❌ Not enough players. Game cancelled.")
+        games.pop(chat_id, None)
+        return
+
+    # AUTO START GAME
+    await message.reply("🎮 Auto-starting game...")
+    await auto_start_game(message)
+
+
+async def auto_start_game(message):
+    chat_id = message.chat.id
+    game = games[chat_id]
+
     game["active"] = True
     game["mode"] = 3
     game["repeat"] = 0
     game["turn_index"] = 0
     game["total_words"] = 0
     game["last_letter"] = random.choice("abcdefghijklmnopqrstuvwxyz")
-
-    game["initial_players"] = len(game["players"])   # ✔ total players saved
-    game["start_time"] = asyncio.get_event_loop().time()  # ✔ game timer started
+    game["initial_players"] = len(game["players"])
+    game["start_time"] = asyncio.get_event_loop().time()
 
     await message.reply(
         f"🎮 Word Game Started!\n"
@@ -71,6 +108,18 @@ async def start_game(_, message):
     )
 
     await next_turn(message)
+    
+# -------------------------------------------------------
+# /startgame
+# -------------------------------------------------------
+@app.on_message(filters.command("startgame"))
+async def manual_start(_, message):
+    chat_id = message.chat.id
+
+    if chat_id not in games or len(games[chat_id]["players"]) < 2:
+        return await message.reply("Need at least 2 players to start!")
+
+    await auto_start_game(message)
 # -------------------------------------------------------
 # /stopgame
 # -------------------------------------------------------
@@ -84,6 +133,31 @@ async def stop_game(_, message):
         del games[chat_id]
 
     await message.reply("🛑 Game stopped.")
+    
+# -------------------------------------------------------
+# /extend
+# -------------------------------------------------------
+@app.on_message(filters.command("extend"))
+async def extend_time(_, message):
+    chat_id = message.chat.id
+
+    if chat_id not in games:
+        return await message.reply("No game lobby available to extend time!")
+
+    game = games[chat_id]
+
+    if game["active"]:
+        return await message.reply("Game already started. Cannot extend time.")
+
+    if game["countdown"] >= game["max_time"]:
+        return await message.reply("⛔ Max time reached (150 sec)! Cannot extend more.")
+
+    game["countdown"] += 30
+
+    if game["countdown"] > game["max_time"]:
+        game["countdown"] = game["max_time"]
+
+    await message.reply(f"⏫ Time extended! New time: {game['countdown']} seconds.")
 
 # -------------------------------------------------------
 # NEXT TURN MESSAGE
