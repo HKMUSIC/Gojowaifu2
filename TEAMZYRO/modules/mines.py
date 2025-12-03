@@ -29,8 +29,8 @@ mines_games = db.mines_games
 async def start_mines(client, message):
 
     parts = message.text.split()
-    if len(parts) == 1:
-        return await message.reply("Usage: /mines 100")
+    if len(parts) < 2:
+        return await message.reply("Usage: /mines <amount> [mines]\nExample: /mines 100 3")
 
     # bet amount
     try:
@@ -40,24 +40,31 @@ async def start_mines(client, message):
     except:
         return await message.reply("Invalid amount.")
 
+    # custom mines
+    mines_count = 5  # default
+    if len(parts) >= 3:
+        try:
+            mines_count = int(parts[2])
+            if mines_count < 1 or mines_count > 24:
+                return await message.reply("Mines must be between 1 and 24.")
+        except:
+            return await message.reply("Invalid mines number.")
+
     user = await get_user(message.from_user.id)
 
     if user["lockbalance"]:
         return await message.reply("❌ Balance locked! Use /unlockbalance")
 
-    # check balance
     if user["balance"] < bet:
         return await message.reply("❌ Not enough balance!")
 
-    # deduct REAL balance
-    new_balance = user["balance"] - bet
-    await user_collection.update_one({"id": user["id"]}, {"$set": {"balance": new_balance}})
+    # deduct balance
+    await user_collection.update_one({"id": user["id"]}, {"$set": {"balance": user["balance"] - bet}})
 
-    # reload user
     user = await get_user(user["id"])
 
-    # create bombs
-    bombs = random.sample(range(1, 26), 5)
+    # generate bombs based on custom mines
+    bombs = random.sample(range(1, 26), mines_count)
 
     # save game
     await mines_games.update_one(
@@ -68,7 +75,8 @@ async def start_mines(client, message):
             "opened": [],
             "multiplier": 1.0,
             "active": True,
-            "bet": bet
+            "bet": bet,
+            "mines": mines_count
         }},
         upsert=True
     )
@@ -76,10 +84,12 @@ async def start_mines(client, message):
     keyboard = build_grid(user["id"], [], True)
 
     await message.reply(
-        f"💣 <b>Mines Started!</b>\nBet: <b>{bet}</b>\nMultiplier: <b>1.0x</b>\nProfit: <b>0</b>",
+        f"💣 <b>Mines Started!</b>\n"
+        f"Bet: <b>{bet}</b>\n"
+        f"Mines: <b>{mines_count}</b>\n"
+        f"Multiplier: <b>1.0x</b>\nProfit: <b>0</b>",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # -------------------- ON TILE CLICK --------------------
 @app.on_callback_query(filters.regex("^mine_"))
@@ -108,17 +118,24 @@ async def mine_click(client, query: CallbackQuery):
         )
 
     # safe click
-    if pos not in game["opened"]:
-        game["opened"].append(pos)
-        multiplier = round(1.0 + 0.30 * len(game["opened"]), 2)
+if pos not in game["opened"]:
+    game["opened"].append(pos)
 
-        await mines_games.update_one(
-            {"user_id": owner_id},
-            {"$set": {"opened": game["opened"], "multiplier": multiplier}}
-        )
+    mines = game.get("mines", 5)
 
-        await query.answer(f"Safe! {multiplier}x")
+    # multiplier scaling: fewer mines → safer → less multiplier
+    # more mines → risky → higher multiplier
+    difficulty_factor = (mines / 25) * 3
 
+    multiplier = round(1.0 + (len(game["opened"]) * difficulty_factor), 2)
+
+    await mines_games.update_one(
+        {"user_id": owner_id},
+        {"$set": {"opened": game["opened"], "multiplier": multiplier}}
+    )
+
+    await query.answer(f"Safe! {multiplier}x")
+    
     profit = int((bet * game["multiplier"]) - bet)
 
     keyboard = build_grid(owner_id, game["opened"], True)
