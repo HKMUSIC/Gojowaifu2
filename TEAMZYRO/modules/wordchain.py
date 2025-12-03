@@ -41,10 +41,13 @@ async def join_game(_, message):
     if message.from_user.id in game["players"]:
         return await message.reply("Already joined!")
 
-  user = message.from_user
-mention = f"[{user.first_name}](tg://user?id={user.id})"
+    # Add user to game
+    user = message.from_user
+    mention = f"[{user.first_name}](tg://user?id={user.id})"
 
-await message.reply(f"✔ {mention} joined the game!")
+    game["players"].append(user.id)
+
+    await message.reply(f"✔ {mention} joined the game!")
 
     
     # Start countdown only once
