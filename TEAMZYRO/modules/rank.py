@@ -6,9 +6,8 @@ import html
 import random
 
 # your collections import
-from TEAMZYRO.database import user_collection, top_global_groups_collection
-# reuse your imports/collections: app, user_collection, top_global_groups_collection
-# PHOTO_URL remains same
+from TEAMZYRO import user_collection, top_global_groups_collection
+
 PHOTO_URL = ["https://files.catbox.moe/9j8e6b.jpg"]
 
 # ---------- Badges ----------
