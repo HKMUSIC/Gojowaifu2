@@ -108,7 +108,7 @@ async def mine_click(client, query: CallbackQuery):
 
     bet = game["bet"]
 
-    # bomb click
+# bomb click
     if pos in game["bombs"]:
         await mines_games.update_one({"user_id": owner_id}, {"$set": {"active": False}})
         keyboard = reveal_bombs(owner_id, game["bombs"], game["opened"])
@@ -118,24 +118,23 @@ async def mine_click(client, query: CallbackQuery):
         )
 
     # safe click
-if pos not in game["opened"]:
-    game["opened"].append(pos)
+    if pos not in game["opened"]:
+        game["opened"].append(pos)
 
-    mines = game.get("mines", 5)
+        mines = game.get("mines", 5)
 
-    # multiplier scaling: fewer mines → safer → less multiplier
-    # more mines → risky → higher multiplier
-    difficulty_factor = (mines / 25) * 3
+        # multiplier scaling: fewer mines → safer → less multiplier
+        difficulty_factor = (mines / 25) * 3
 
-    multiplier = round(1.0 + (len(game["opened"]) * difficulty_factor), 2)
+        multiplier = round(1.0 + (len(game["opened"]) * difficulty_factor), 2)
 
-    await mines_games.update_one(
-        {"user_id": owner_id},
-        {"$set": {"opened": game["opened"], "multiplier": multiplier}}
-    )
+        await mines_games.update_one(
+            {"user_id": owner_id},
+            {"$set": {"opened": game["opened"], "multiplier": multiplier}}
+        )
 
-    await query.answer(f"Safe! {multiplier}x")
-    
+        await query.answer(f"Safe! {multiplier}x")
+
     profit = int((bet * game["multiplier"]) - bet)
 
     keyboard = build_grid(owner_id, game["opened"], True)
@@ -147,7 +146,6 @@ if pos not in game["opened"]:
         f"Profit: <b>{profit}</b>",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 # -------------------- CASHOUT --------------------
 @app.on_callback_query(filters.regex("^cashout_"))
