@@ -129,9 +129,9 @@ async def cmd_new(_, message: Message):
             # ignore failures (user blocked bot etc)
             pass
 
-    await message.reply("✅ New UNO lobby created. Use /join to join. When >=2 players are ready, use /start to begin.")
+    await message.reply("✅ New UNO lobby created. Use /joinuno to join. When >=2 players are ready, use /start to begin.")
 
-@app.on_message(filters.command("join") & ~filters.private)
+@app.on_message(filters.command("joinuno") & ~filters.private)
 async def cmd_join(_, message: Message):
     chat_id = message.chat.id
     if chat_id not in GAMES:
@@ -164,7 +164,7 @@ async def cmd_leave(_, message: Message):
         del GAMES[chat_id]
         await message.reply("Not enough players. Game ended.")
 
-@app.on_message(filters.command("start") & ~filters.private)
+@app.on_message(filters.command("startuno") & ~filters.private)
 async def cmd_start(_, message: Message):
     chat_id = message.chat.id
     if chat_id not in GAMES:
