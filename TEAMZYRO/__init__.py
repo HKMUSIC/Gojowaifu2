@@ -35,7 +35,7 @@ def LOGGER(name: str) -> logging.Logger:
 
 API_ID = int(os.getenv("API_ID", "23343216"))
 API_HASH = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
-BOT_TOKEN = os.getenv("TOKEN", "")
+TOKEN = os.getenv("TOKEN", "")
 
 GLOG = os.getenv("GLOG", "gojo_waifu")
 CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "gojo_waifu")
