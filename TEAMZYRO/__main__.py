@@ -2,24 +2,22 @@ import asyncio
 import logging
 import importlib
 
-from TEAMZYRO import ZYRO, LOGGER, config
+from TEAMZYRO import ZYRO, LOGGER
+from TEAMZYRO import config
 from TEAMZYRO.modules import ALL_MODULES
-from pyrogram import Client
+
 from aiogram import Bot, Dispatcher
+
 
 logging.basicConfig(level=logging.INFO)
 
-# ---------------- Aiogram v3 setup ---------------- #
+# -------- Aiogram Setup -------- #
 
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
-# ------------- Pyrogram bot (your ZYRO alias) ------------- #
 
-app = ZYRO  # ZYRO already = Client(...) in your __init__.py
-
-
-# ------------------- LOAD MODULES ------------------- #
+# -------- Load All Modules -------- #
 
 def load_modules():
     for module_name in ALL_MODULES:
@@ -30,44 +28,46 @@ def load_modules():
     )
 
 
-# ---------------------- STARTERS ---------------------- #
+# -------- Pyrogram Start -------- #
 
 async def start_pyrogram():
     LOGGER("TEAMZYRO").info("Starting Pyrogram...")
-    await app.start()
-    await app.send_message(config.OWNER_ID, "Pyrogram Started ✔️")
-    await app.idle()
+    await ZYRO.start()
+    await ZYRO.send_message(config.OWNER_ID, "Pyrogram Started ✔️")
+    await ZYRO.idle()
 
+
+# -------- Aiogram Start -------- #
 
 async def start_aiogram():
     LOGGER("TEAMZYRO").info("Starting Aiogram...")
     await dp.start_polling(bot)
 
 
-async def send_start_message():
+# -------- Start message -------- #
+
+async def start_msg():
     try:
-        await app.send_message(config.OWNER_ID, "Bot Fully Online ✔️🥳")
-    except Exception as e:
-        LOGGER("TEAMZYRO").warning(f"Start message failed: {e}")
+        await ZYRO.send_message(config.OWNER_ID, "Bot Fully Online ✔️")
+    except:
+        pass
 
 
-# ---------------------- MAIN ASYNC ---------------------- #
+# -------- START BOT -------- #
 
 async def start_bot():
     load_modules()
+    await start_msg()
 
-    LOGGER("TEAMZYRO").info("Starting both bots...")
+    LOGGER("TEAMZYRO").info("Both bots starting...")
 
-    await send_start_message()
-
-    # Run aiogram + pyrogram parallel
     await asyncio.gather(
         start_aiogram(),
         start_pyrogram(),
     )
 
 
-# ---------------------- MAIN ENTRY ---------------------- #
+# -------- MAIN -------- #
 
 def main():
     LOGGER("TEAMZYRO").info(
