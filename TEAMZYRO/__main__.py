@@ -1,41 +1,82 @@
-from TEAMZYRO import *
-import importlib
-import logging
 import asyncio
+import importlib
+import signal
+from TEAMZYRO import ZYRO, application, LOGGER
 from TEAMZYRO.modules import ALL_MODULES
 
 
+# ---------------------------------------------
+# GRACEFUL SHUTDOWN HANDLER
+# ---------------------------------------------
 async def shutdown():
-    """Cleanly cancel all running asyncio tasks to avoid Heroku crashes."""
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    LOGGER("TEAMZYRO").info("Shutting down cleanly...")
+
+    # Stop Aiogram
+    try:
+        await application.shutdown()
+    except:
+        pass
+
+    # Stop Pyrogram
+    try:
+        await ZYRO.stop()
+    except:
+        pass
+
+    # Cancel all asyncio tasks
+    current = asyncio.current_task()
+    tasks = [t for t in asyncio.all_tasks() if t is not current]
 
     for task in tasks:
         task.cancel()
-        try:
-            await task
-        except:
-            pass
+
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    LOGGER("TEAMZYRO").info("Shutdown complete.")
 
 
-def main() -> None:
+# ---------------------------------------------
+# MAIN APP
+# ---------------------------------------------
+async def start_bot():
+    # Import all modules
     for module_name in ALL_MODULES:
         importlib.import_module("TEAMZYRO.modules." + module_name)
 
     LOGGER("TEAMZYRO.modules").info("𝐀𝐥𝐥 𝐅𝐞𝐚𝐭𝐮𝐫𝐞𝐬 𝐋𝐨𝐚𝐝𝐞𝐝 𝐁𝐚𝐛𝐲🥳...")
 
+    # Start Pyrogram
+    await ZYRO.start()
+
+    # Start Aiogram
+    await application.start()
+    await application.initialize()
+
+    LOGGER("TEAMZYRO").info("Both bots started successfully.")
+
+    # Run Aiogram polling FOREVER until stopped
+    await application.start_polling()
+
+
+# ---------------------------------------------
+# ENTRYPOINT
+# ---------------------------------------------
+def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Gracefully handle Heroku stop signals
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
+        except:
+            pass
+
     try:
-        # --- START BOTH BOTS SAFELY ---
-        ZYRO.start()                                     # Pyrogram bot
-        application.run_polling(drop_pending_updates=True)  # Aiogram bot
-        send_start_message()
-
+        loop.run_until_complete(start_bot())
     finally:
-        # --- SAFE SHUTDOWN (Fixes Task Destroyed Error) ---
-        asyncio.run(shutdown())
-
-    LOGGER("TEAMZYRO").info(
-        "╔═════ஜ۩۞۩ஜ════╗\n  ☠︎︎MADE BY GOJOXNETWORK☠︎︎\n╚═════ஜ۩۞۩ஜ════╝"
-    )
+        loop.run_until_complete(shutdown())
+        loop.close()
 
 
 if __name__ == "__main__":
