@@ -67,18 +67,7 @@ SUDO = list(map(int, os.getenv("SUDO", "7553434931").split(',')))
 OWNER_ID = int(os.getenv("OWNER_ID", "6356015122"))
 
 
-# ====================================================
-#                PYROGRAM CLIENT
-# ====================================================
 
-ZYRO = Client(
-    "TEAMZYRO",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    Token=TOKEN,
-    workers=50,
-    plugins=dict(root="TEAMZYRO/modules")
-)
 
 # --------------------- TELEGRAM BOT CONFIGURATION -----------------------
 command_filter = f.create(lambda _, __, message: message.text and message.text.startswith("/"))
