@@ -4,22 +4,23 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from TEAMZYRO import app, user_collection
 
+
 BATTLE_IMAGES = [
     "https://files.catbox.moe/1f6a2q.jpg",
     "https://files.catbox.moe/0o7nkl.jpg",
     "https://files.catbox.moe/3gljwk.jpg",
-    "https://files.catbox.moe/5dtj1p.jpg"
+    "https://files.catbox.moe/5dtj1p.jpg",
 ]
 
 WIN_VIDEOS = [
     "https://files.catbox.moe/5cezg5.mp4",
     "https://files.catbox.moe/dw2df7.mp4",
-    "https://files.catbox.moe/5vgulb.mp4"
+    "https://files.catbox.moe/5vgulb.mp4",
 ]
 
 LOSE_VIDEOS = [
     "https://files.catbox.moe/ucdvpd.mp4",
-    "https://files.catbox.moe/bhwnu4.mp4"
+    "https://files.catbox.moe/bhwnu4.mp4",
 ]
 
 ATTACK_MOVES = [
@@ -48,6 +49,10 @@ async def ensure_user(uid, name):
             "losses": 0
         })
 
+
+# ============================== #
+#       BATTLE COMMAND
+# ============================== #
 
 @app.on_message(filters.command("battle"))
 async def battle_cmd(client, message):
@@ -85,7 +90,7 @@ async def battle_cmd(client, message):
         [
             [
                 InlineKeyboardButton("Accept", callback_data=f"battle_yes:{user.id}:{opponent.id}:{bet}"),
-                InlineKeyboardButton("Reject", callback_data=f"battle_no:{user.id}")
+                InlineKeyboardButton("Reject", callback_data=f"battle_no:{user.id}:{opponent.id}"),
             ]
         ]
     )
@@ -95,6 +100,10 @@ async def battle_cmd(client, message):
         reply_markup=buttons
     )
 
+
+# ============================== #
+#       ACCEPT BATTLE
+# ============================== #
 
 @app.on_callback_query(filters.regex("^battle_yes"))
 async def accept_battle(client, cq):
@@ -121,8 +130,16 @@ async def accept_battle(client, cq):
         caption=f"Battle Started!\n{cdata['first_name']} vs {odata['first_name']}\nBet: {bet}"
     )
 
-    asyncio.create_task(run_battle(msg, challenger, opponent, bet, cdata, odata))
+    # Safe task creation
+    task = asyncio.create_task(
+        run_battle(msg, challenger, opponent, bet, cdata, odata)
+    )
+    task.add_done_callback(lambda t: None)   # prevents "task destroyed" error
 
+
+# ============================== #
+#       MAIN BATTLE LOOP
+# ============================== #
 
 async def run_battle(msg, challenger, opponent, bet, cdata, odata):
 
@@ -130,49 +147,64 @@ async def run_battle(msg, challenger, opponent, bet, cdata, odata):
     hpO = 100
     turn = 0
 
-    while hpC > 0 and hpO > 0:
-        await asyncio.sleep(1)
-        turn += 1
+    try:
+        while hpC > 0 and hpO > 0:
+            await asyncio.sleep(1)
+            turn += 1
 
-        attacker = random.choice(["c", "o"])
-        move = random.choice(ATTACK_MOVES)
-        dmg = random.randint(move[1], move[2])
+            attacker = random.choice(["c", "o"])
+            move = random.choice(ATTACK_MOVES)
+            dmg = random.randint(move[1], move[2])
 
-        if attacker == "c":
-            hpO -= dmg
-            txt = f"{cdata['first_name']} used {move[0]} → {dmg} dmg!"
-        else:
-            hpC -= dmg
-            txt = f"{odata['first_name']} used {move[0]} → {dmg} dmg!"
+            if attacker == "c":
+                hpO -= dmg
+                txt = f"{cdata['first_name']} used {move[0]} → {dmg} dmg!"
+            else:
+                hpC -= dmg
+                txt = f"{odata['first_name']} used {move[0]} → {dmg} dmg!"
 
-        hpC = max(0, hpC)
-        hpO = max(0, hpO)
+            hpC = max(0, hpC)
+            hpO = max(0, hpO)
 
-        try:
-            await msg.edit_caption(
-                f"Turn {turn}\n{txt}\n\n"
-                f"{cdata['first_name']} HP: {hpC} {hp_bar(hpC)}\n"
-                f"{odata['first_name']} HP: {hpO} {hp_bar(hpO)}"
-            )
-        except:
-            pass
+            try:
+                await msg.edit_caption(
+                    f"Turn {turn}\n{txt}\n\n"
+                    f"{cdata['first_name']} HP: {hpC} {hp_bar(hpC)}\n"
+                    f"{odata['first_name']} HP: {hpO} {hp_bar(hpO)}"
+                )
+            except:
+                pass
 
-    winner = challenger if hpC > 0 else opponent
-    loser = opponent if hpC > 0 else challenger
+        winner = challenger if hpC > 0 else opponent
+        loser = opponent if hpC > 0 else challenger
 
-    await user_collection.update_one({"id": winner}, {"$inc": {"balance": bet * 2, "wins": 1}})
-    await user_collection.update_one({"id": loser}, {"$inc": {"losses": 1}})
+        await user_collection.update_one({"id": winner}, {"$inc": {"balance": bet * 2, "wins": 1}})
+        await user_collection.update_one({"id": loser}, {"$inc": {"losses": 1}})
 
-    wname = (await user_collection.find_one({"id": winner}))["first_name"]
-    lname = (await user_collection.find_one({"id": loser}))["first_name"]
+        wname = (await user_collection.find_one({"id": winner}))["first_name"]
+        lname = (await user_collection.find_one({"id": loser}))["first_name"]
 
-    await msg.reply_video(random.choice(WIN_VIDEOS), caption=f"{wname} won the battle!")
-    await msg.reply_video(random.choice(LOSE_VIDEOS), caption=f"{lname} lost!")
+        await msg.reply_video(random.choice(WIN_VIDEOS), caption=f"{wname} won the battle!")
+        await msg.reply_video(random.choice(LOSE_VIDEOS), caption=f"{lname} lost!")
 
-    active_battles.pop(challenger, None)
-    active_battles.pop(opponent, None)
+    except asyncio.CancelledError:
+        print("Battle task cancelled safely")
 
+    finally:
+        active_battles.pop(challenger, None)
+        active_battles.pop(opponent, None)
+
+
+# ============================== #
+#       REJECT BATTLE
+# ============================== #
 
 @app.on_callback_query(filters.regex("^battle_no"))
 async def reject_battle(client, cq):
+
+    _, c_s, o_s = cq.data.split(":")
+
+    if cq.from_user.id not in [int(c_s), int(o_s)]:
+        return await cq.answer("Not for you.", show_alert=True)
+
     await cq.message.edit("Battle rejected.")
