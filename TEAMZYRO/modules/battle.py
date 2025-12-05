@@ -53,7 +53,6 @@ async def ensure_user(uid, name):
 # ============================== #
 #       BATTLE COMMAND
 # ============================== #
-
 @app.on_message(filters.command("battle"))
 async def battle_cmd(client, message):
 
@@ -65,7 +64,7 @@ async def battle_cmd(client, message):
 
     parts = message.text.split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return await message.reply("Usage: Reply to a user → `/battle amount`")
+        return await message.reply("Usage: `/battle amount`")
 
     bet = int(parts[1])
 
@@ -86,17 +85,18 @@ async def battle_cmd(client, message):
     if user.id in active_battles or opponent.id in active_battles:
         return await message.reply("Someone is already in a battle!")
 
+    # Clean callback data < 64 bytes
     buttons = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Accept", callback_data=f"battle_yes:{user.id}:{opponent.id}:{bet}"),
-                InlineKeyboardButton("Reject", callback_data=f"battle_no:{user.id}:{opponent.id}"),
+                InlineKeyboardButton("Accept ⚔️", callback_data=f"battle_yes|{user.id}|{opponent.id}|{bet}"),
+                InlineKeyboardButton("Reject ❌", callback_data=f"battle_no|{user.id}|{opponent.id}")
             ]
         ]
     )
 
     await message.reply(
-        f"{user.mention} challenged {opponent.mention} for {bet} coins!",
+        f"{user.mention} challenged {opponent.mention} for **{bet} coins!**",
         reply_markup=buttons
     )
 
@@ -104,17 +104,18 @@ async def battle_cmd(client, message):
 # ============================== #
 #       ACCEPT BATTLE
 # ============================== #
-
 @app.on_callback_query(filters.regex("^battle_yes"))
 async def accept_battle(client, cq):
 
-    _, c_s, o_s, bet_s = cq.data.split(":")
+    _, c_s, o_s, bet_s = cq.data.split("|")
     challenger = int(c_s)
     opponent = int(o_s)
     bet = int(bet_s)
 
     if cq.from_user.id != opponent:
-        return await cq.answer("Not for you.", show_alert=True)
+        return await cq.answer("Not your battle!", show_alert=True)
+
+    await cq.answer()  # instant response
 
     active_battles[challenger] = True
     active_battles[opponent] = True
@@ -125,22 +126,37 @@ async def accept_battle(client, cq):
     cdata = await user_collection.find_one({"id": challenger})
     odata = await user_collection.find_one({"id": opponent})
 
-    msg = await cq.message.reply_photo(
+    msg = await cq.message.edit_text("Battle starting... ⚔️")
+
+    msg = await msg.reply_photo(
         random.choice(BATTLE_IMAGES),
-        caption=f"Battle Started!\n{cdata['first_name']} vs {odata['first_name']}\nBet: {bet}"
+        caption=f"⚔️ **Battle Started!**\n{cdata['first_name']} vs {odata['first_name']}\nBet: **{bet}**"
     )
 
-    # Safe task creation
     task = asyncio.create_task(
         run_battle(msg, challenger, opponent, bet, cdata, odata)
     )
-    task.add_done_callback(lambda t: None)   # prevents "task destroyed" error
+    task.add_done_callback(lambda t: None)
+
+
+# ============================== #
+#       REJECT BATTLE
+# ============================== #
+@app.on_callback_query(filters.regex("^battle_no"))
+async def reject_battle(client, cq):
+
+    _, c_s, o_s = cq.data.split("|")
+
+    if cq.from_user.id not in [int(c_s), int(o_s)]:
+        return await cq.answer("Not your battle!", show_alert=True)
+
+    await cq.answer("Battle rejected ❌")  
+    await cq.message.edit("❌ The challenge was rejected.")
 
 
 # ============================== #
 #       MAIN BATTLE LOOP
 # ============================== #
-
 async def run_battle(msg, challenger, opponent, bet, cdata, odata):
 
     hpC = 100
@@ -158,17 +174,17 @@ async def run_battle(msg, challenger, opponent, bet, cdata, odata):
 
             if attacker == "c":
                 hpO -= dmg
-                txt = f"{cdata['first_name']} used {move[0]} → {dmg} dmg!"
+                txt = f"{cdata['first_name']} used **{move[0]}** → {dmg} dmg!"
             else:
                 hpC -= dmg
-                txt = f"{odata['first_name']} used {move[0]} → {dmg} dmg!"
+                txt = f"{odata['first_name']} used **{move[0]}** → {dmg} dmg!"
 
             hpC = max(0, hpC)
             hpO = max(0, hpO)
 
             try:
                 await msg.edit_caption(
-                    f"Turn {turn}\n{txt}\n\n"
+                    f"**Turn {turn}**\n{txt}\n\n"
                     f"{cdata['first_name']} HP: {hpC} {hp_bar(hpC)}\n"
                     f"{odata['first_name']} HP: {hpO} {hp_bar(hpO)}"
                 )
@@ -184,27 +200,12 @@ async def run_battle(msg, challenger, opponent, bet, cdata, odata):
         wname = (await user_collection.find_one({"id": winner}))["first_name"]
         lname = (await user_collection.find_one({"id": loser}))["first_name"]
 
-        await msg.reply_video(random.choice(WIN_VIDEOS), caption=f"{wname} won the battle!")
-        await msg.reply_video(random.choice(LOSE_VIDEOS), caption=f"{lname} lost!")
+        await msg.reply_video(random.choice(WIN_VIDEOS), caption=f"🏆 {wname} won the battle!")
+        await msg.reply_video(random.choice(LOSE_VIDEOS), caption=f"💀 {lname} lost the battle!")
 
     except asyncio.CancelledError:
-        print("Battle task cancelled safely")
+        print("Battle cancelled safely")
 
     finally:
         active_battles.pop(challenger, None)
         active_battles.pop(opponent, None)
-
-
-# ============================== #
-#       REJECT BATTLE
-# ============================== #
-
-@app.on_callback_query(filters.regex("^battle_no"))
-async def reject_battle(client, cq):
-
-    _, c_s, o_s = cq.data.split(":")
-
-    if cq.from_user.id not in [int(c_s), int(o_s)]:
-        return await cq.answer("Not for you.", show_alert=True)
-
-    await cq.message.edit("Battle rejected.")
