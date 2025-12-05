@@ -1,22 +1,18 @@
 from TEAMZYRO import app   # <<< REQUIRED
 from pyrogram import filters, enums
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-import asyncio
 import html
 import random
 
-# your collections import
 from TEAMZYRO import user_collection, top_global_groups_collection
 
 PHOTO_URL = ["https://files.catbox.moe/9j8e6b.jpg"]
 
+
 # ---------- Badges ----------
 def get_badge(rank: int, total: int):
-    """Return (emoji, label) based on rank and total players."""
     if total <= 0:
         return "", ""
-
-    # absolute positions
     if rank == 1:
         return "🥇", "Champion"
     if rank == 2:
@@ -25,7 +21,7 @@ def get_badge(rank: int, total: int):
         return "🥉", "3rd Place"
     if rank <= 10:
         return "🏅", f"Top {rank}"
-    # percentile-based badges
+
     pct = rank / total
     if pct <= 0.01:
         return "💎", "Top 1%"
@@ -35,45 +31,47 @@ def get_badge(rank: int, total: int):
         return "🔹", "Top 10%"
     return "", ""
 
-# ---------- Modified build functions to include badges ----------
-def build_user_leaderboard_with_badges(data, include_badge=True):
-    """data is list of dicts sorted by characters descending"""
+
+# ---------- Build captions ----------
+def build_user_leaderboard(data):
     total = len(data)
     caption = "<b>🏆 TOP 10 USERS (CHARACTERS)</b>\n\n"
     for i, user in enumerate(data, start=1):
-        uid = user.get("id", 0)
+        uid = user.get("id")
         name = html.escape(user.get("first_name", "Unknown"))
         if len(name) > 15:
             name = name[:15] + "..."
         count = len(user.get("characters", []))
-        badge_emoji, _ = (get_badge(i, total) if include_badge else ("", ""))
-        caption += f"{i}. {badge_emoji} <a href='tg://user?id={uid}'><b>{name}</b></a> ➜ <b>{count}</b>\n"
+        badge, _ = get_badge(i, total)
+        caption += f"{i}. {badge} <a href='tg://user?id={uid}'><b>{name}</b></a> ➜ <b>{count}</b>\n"
     return caption
 
-def build_group_leaderboard_with_badges(data):
+
+def build_group_leaderboard(data):
     caption = "<b>🏆 TOP 10 GROUPS</b>\n\n"
-    total = sum(g.get("count", 0) for g in data) or len(data)
     for i, group in enumerate(data, start=1):
         name = html.escape(group.get("group_name", "Unknown"))
         if len(name) > 15:
             name = name[:15] + "..."
         count = group.get("count", 0)
-        badge_emoji, _ = get_badge(i, len(data))
-        caption += f"{i}. {badge_emoji} <b>{name}</b> ➜ <b>{count}</b>\n"
+        badge, _ = get_badge(i, len(data))
+        caption += f"{i}. {badge} <b>{name}</b> ➜ <b>{count}</b>\n"
     return caption
 
-def build_coin_leaderboard_with_badges(data):
+
+def build_coin_leaderboard(data):
     caption = "<b>🏆 TOP 10 RICHEST USERS</b>\n\n"
     total = len(data)
     for i, user in enumerate(data, start=1):
-        uid = user.get("id", 0)
+        uid = user.get("id")
         name = html.escape(user.get("first_name", "Unknown"))
         if len(name) > 15:
             name = name[:15] + "..."
-        coins = user.get("balance", 0)  # ensure you use 'balance'
-        badge_emoji, _ = get_badge(i, total)
-        caption += f"{i}. {badge_emoji} <a href='tg://user?id={uid}'><b>{name}</b></a> ➜ <b>{coins}</b>\n"
+        coins = user.get("balance", 0)
+        badge, _ = get_badge(i, total)
+        caption += f"{i}. {badge} <a href='tg://user?id={uid}'><b>{name}</b></a> ➜ <b>{coins}</b>\n"
     return caption
+
 
 # ---------- Buttons ----------
 def get_buttons(active):
@@ -87,89 +85,62 @@ def get_buttons(active):
         ]
     ])
 
-# ---------- Animated leaderboard helper ----------
-async def animate_leaderboard(message_obj, cycles=3, delay=2.0):
-    """
-    message_obj is the sent Message object (the one with photo/caption).
-    cycles: how many full cycles to run (Users->Groups->Richest). Each view shown for `delay` seconds.
-    """
-    try:
-        for _ in range(cycles):
-            # Users
-            cursor = user_collection.find({}, {"_id":0,"id":1,"first_name":1,"characters":1})
-            udata = await cursor.to_list(length=None)
-            udata.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
-            top_users = udata[:10]
-            caption = build_user_leaderboard_with_badges(top_users)
-            try:
-                await message_obj.edit_caption(caption, parse_mode=enums.ParseMode.HTML, reply_markup=get_buttons("top"))
-            except:
-                # fallback to edit_message_text if caption edit fails
-                try:
-                    await message_obj.edit_text(caption, parse_mode=enums.ParseMode.HTML)
-                except:
-                    pass
-            await asyncio.sleep(delay)
 
-            # Groups
-            gcursor = top_global_groups_collection.aggregate([
-                {"$project": {"group_name":1, "count":1}},
-                {"$sort":{"count":-1}},
-                {"$limit":10}
-            ])
-            gdata = await gcursor.to_list(length=10)
-            caption = build_group_leaderboard_with_badges(gdata)
-            try:
-                await message_obj.edit_caption(caption, parse_mode=enums.ParseMode.HTML, reply_markup=get_buttons("top_group"))
-            except:
-                try:
-                    await message_obj.edit_text(caption, parse_mode=enums.ParseMode.HTML)
-                except:
-                    pass
-            await asyncio.sleep(delay)
-
-            # Richest
-            cursor = user_collection.find({}, {"_id":0,"id":1,"first_name":1,"balance":1})
-            cdata = await cursor.to_list(length=None)
-            cdata.sort(key=lambda x: x.get("balance",0), reverse=True)
-            top_coins = cdata[:10]
-            caption = build_coin_leaderboard_with_badges(top_coins)
-            try:
-                await message_obj.edit_caption(caption, parse_mode=enums.ParseMode.HTML, reply_markup=get_buttons("mtop"))
-            except:
-                try:
-                    await message_obj.edit_text(caption, parse_mode=enums.ParseMode.HTML)
-                except:
-                    pass
-            await asyncio.sleep(delay)
-    except Exception:
-        # swallow errors to avoid crashing background task
-        return
-
-# ---------- /rank command (send message then animate) ----------
+# ---------- /rank ----------
 @app.on_message(filters.command("rank"))
 async def rank_cmd(client, message):
-    # send initial users leaderboard (will be animated)
     cursor = user_collection.find({}, {"_id": 0, "id": 1, "first_name": 1, "characters": 1})
     data = await cursor.to_list(length=None)
     data.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
     top_users = data[:10]
-    caption = build_user_leaderboard_with_badges(top_users)
 
-    sent = await message.reply_photo(
+    caption = build_user_leaderboard(top_users)
+
+    await message.reply_photo(
         photo=random.choice(PHOTO_URL),
         caption=caption,
         parse_mode=enums.ParseMode.HTML,
         reply_markup=get_buttons("top")
     )
 
-    # start animation task (non-blocking)
-    asyncio.create_task(animate_leaderboard(sent, cycles=4, delay=2.0))
 
-# ---------- /profile command ----------
+# ---------- BUTTON HANDLERS ----------
+@app.on_callback_query(filters.regex("^(top|top_group|mtop)$"))
+async def leaderboard_buttons(client, query):
+    btn = query.data
+
+    if btn == "top":
+        cursor = user_collection.find({}, {"_id":0,"id":1,"first_name":1,"characters":1})
+        data = await cursor.to_list(length=None)
+        data.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
+        caption = build_user_leaderboard(data[:10])
+
+    elif btn == "top_group":
+        cursor = top_global_groups_collection.aggregate([
+            {"$project": {"group_name":1, "count":1}},
+            {"$sort":{"count":-1}},
+            {"$limit":10}
+        ])
+        data = await cursor.to_list(length=10)
+        caption = build_group_leaderboard(data)
+
+    else:  # richest
+        cursor = user_collection.find({}, {"_id":0,"id":1,"first_name":1,"balance":1})
+        data = await cursor.to_list(length=None)
+        data.sort(key=lambda x: x.get("balance", 0), reverse=True)
+        caption = build_coin_leaderboard(data[:10])
+
+    await query.message.edit_caption(
+        caption,
+        parse_mode=enums.ParseMode.HTML,
+        reply_markup=get_buttons(btn)
+    )
+    await query.answer()
+
+
+# ---------- /profile ----------
 @app.on_message(filters.command("profile"))
 async def profile_cmd(client, message):
-    # usage: /profile (self) or /profile <user_id or @username or reply>
     target = None
     if message.reply_to_message:
         target = message.reply_to_message.from_user
@@ -177,35 +148,28 @@ async def profile_cmd(client, message):
         parts = message.text.split()
         if len(parts) >= 2:
             try:
-                # accept mention or id
                 t = parts[1]
                 if t.startswith("@"):
                     target = await client.get_users(t)
                 else:
                     target = await client.get_users(int(t))
-            except Exception:
-                return await message.reply_text("Invalid user identifier.")
+            except:
+                return await message.reply_text("Invalid user.")
 
     if not target:
         target = message.from_user
 
     uid = target.id
-
-    # fetch user doc
     user_doc = await user_collection.find_one({"id": uid})
     if not user_doc:
         return await message.reply_text("User not found in DB.")
 
-    # compute rank by characters
-    cursor = user_collection.find({}, {"_id":0,"id":1,"first_name":1,"characters":1})
+    cursor = user_collection.find({}, {"_id":0,"id":1,"characters":1})
     all_users = await cursor.to_list(length=None)
     all_users.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
+
     total_users = len(all_users)
-    rank = 0
-    for idx, u in enumerate(all_users, start=1):
-        if u.get("id") == uid:
-            rank = idx
-            break
+    rank = next((i for i, u in enumerate(all_users, start=1) if u["id"] == uid), 0)
 
     badge_emoji, badge_label = get_badge(rank, total_users)
 
@@ -215,19 +179,20 @@ async def profile_cmd(client, message):
     caption = (
         f"<b>{html.escape(target.first_name)}</b> {badge_emoji}\n"
         f"{badge_label}\n\n"
-        f"🧾 Characters Found: <b>{chars}</b>\n"
+        f"🧾 Characters: <b>{chars}</b>\n"
         f"💰 Balance: <b>{balance}</b>\n"
-        f"🏅 Global Rank (by characters): <b>#{rank} / {total_users}</b>\n"
+        f"🏅 Rank: <b>#{rank} / {total_users}</b>"
     )
 
-    # try to send profile photo if present
     try:
         photos = await client.get_profile_photos(uid, limit=1)
         if photos.total_count > 0:
-            await client.send_photo(chat_id=message.chat.id, photo=photos.photos[0].file_id, caption=caption, parse_mode=enums.ParseMode.HTML)
-            return
-    except Exception:
+            return await message.reply_photo(
+                photos.photos[0].file_id,
+                caption=caption,
+                parse_mode=enums.ParseMode.HTML
+            )
+    except:
         pass
 
-    # fallback: just send text
     await message.reply_text(caption, parse_mode=enums.ParseMode.HTML)
