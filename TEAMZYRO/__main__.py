@@ -1,41 +1,39 @@
 import asyncio
 import importlib
-from TEAMZYRO import ZYRO, application, LOGGER
+from TEAMZYRO import ZYRO, application, LOGGER, send_start_message
 from TEAMZYRO.modules import ALL_MODULES
 
 
 async def start_ptb():
-    """Start PTB safely in background"""
     await application.initialize()
     await application.start()
-
-    # Non-blocking polling
     asyncio.create_task(application.updater.start_polling())
-
-    LOGGER("PTB").info("PTB polling started successfully.")
+    LOGGER("PTB").info("Polling started")
 
 
 async def main():
-    # Load all modules first
     for module_name in ALL_MODULES:
         importlib.import_module("TEAMZYRO.modules." + module_name)
 
-    LOGGER("TEAMZYRO.modules").info("All modules loaded successfully.")
+    LOGGER("TEAMZYRO.modules").info("All modules loaded")
 
-    # Start Pyrogram
+    # Start Pyrogram properly
     await ZYRO.start()
-    LOGGER("PYROGRAM").info("Pyrogram started successfully.")
 
-    # Start PTB in background task
+    # Start PTB in background
     await start_ptb()
 
-    LOGGER("TEAMZYRO").info(
-        "╔═════ஜ۩۞۩ஜ════╗\n BOT RUNNING SUCCESSFULLY\n╚═════ஜ۩۞۩ஜ════╝"
-    )
+    # Optional start msg
+    try:
+        send_start_message()
+    except Exception as e:
+        LOGGER("START").error(f"Start message error: {e}")
 
-    # Keep alive forever
+    LOGGER("TEAMZYRO").info("BOT RUNNING SUCCESSFULLY")
+
+    # Keep alive
     while True:
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
