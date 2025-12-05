@@ -6,7 +6,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters as f
 from pyrogram.types import x
 
-# --------------------------- LOGGING SETUP ------------------------------
+# ====================================================
+#                LOGGING SETUP
+# ====================================================
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
@@ -21,22 +24,34 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("telegram").setLevel(logging.ERROR)
 
+
 def LOGGER(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
-# ---------------------------- CONSTANTS ---------------------------------
-api_id = os.getenv("API_ID", "23343216")
-api_hash = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
-TOKEN = os.getenv("TOKEN", "")
+
+# ====================================================
+#                ENV CONFIG (Your Style)
+# ====================================================
+
+API_ID = int(os.getenv("API_ID", "23343216"))
+API_HASH = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
+BOT_TOKEN = os.getenv("TOKEN", "")
+
 GLOG = os.getenv("GLOG", "gojo_waifu")
 CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "gojo_waifu")
 SUPPORT_CHAT_ID = os.getenv("SUPPORT_CHAT_ID", "-1002792716047")
-mongo_url = os.getenv("MONGO_URL", "mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+
+MONGO_URL = os.getenv(
+    "MONGO_URL",
+    "mongodb+srv://Gojowaifu2:Gojowaifu2@cluster0.uvox90s.mongodb.net/?retryWrites=true&w=majority"
+)
 
 MUSJ_JOIN = os.getenv("MUSJ_JOIN", "https://t.me/+8KU5ZDxvZyw0N2U1")
 
-# Modified to support both image and video URLs
-START_MEDIA = os.getenv("START_MEDIA", "https://files.catbox.moe/3kd6oq.jpg,https://files.catbox.moe/nkg2ly.jpg,https://files.catbox.moe/0zvwpt.jpg,https://files.catbox.moe/z7d8i6.jpg").split(',')
+START_MEDIA = os.getenv(
+    "START_MEDIA",
+    "https://files.catbox.moe/3kd6oq.jpg,https://files.catbox.moe/nkg2ly.jpg,https://files.catbox.moe/0zvwpt.jpg,https://files.catbox.moe/z7d8i6.jpg"
+).split(',')
 
 PHOTO_URL = [
     os.getenv("PHOTO_URL_1", "https://files.catbox.moe/f5njbm.jpg"),
@@ -47,8 +62,23 @@ STATS_IMG = ["https://files.catbox.moe/0zvwpt.jpg"]
 
 SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "https://t.me/GOJO_NOBITA_II")
 UPDATE_CHAT = os.getenv("UPDATE_CHAT", "https://t.me/GOJO_SUPPORT_GROUP_II")
+
 SUDO = list(map(int, os.getenv("SUDO", "7553434931").split(',')))
 OWNER_ID = int(os.getenv("OWNER_ID", "6356015122"))
+
+
+# ====================================================
+#                PYROGRAM CLIENT
+# ====================================================
+
+ZYRO = Client(
+    "TEAMZYRO",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    workers=50,
+    plugins=dict(root="TEAMZYRO/modules")
+)
 
 # --------------------- TELEGRAM BOT CONFIGURATION -----------------------
 command_filter = f.create(lambda _, __, message: message.text and message.text.startswith("/"))
