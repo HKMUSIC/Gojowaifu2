@@ -64,14 +64,14 @@ def battle_key(challenger: int, opponent: int) -> str:
 @app.on_message(filters.command("battle"))
 async def battle_cmd(client, message: Message):
     if not message.reply_to_message:
-        return await message.reply("Reply to someone to challenge them! Usage: reply + `/battle <amount>`")
-
+        return await message.reply("Reply to someone to challenge them! Usage: reply + /battle <amount>")
+        
     opponent = message.reply_to_message.from_user
     user = message.from_user
 
     parts = message.text.split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return await message.reply("Usage: `/battle <amount>` (reply to a user)")
+        return await message.reply("Usage: /battle <amount>` (reply to a user)")
 
     bet = int(parts[1])
     if bet <= 0:
