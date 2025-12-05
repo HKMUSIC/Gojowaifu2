@@ -1,5 +1,6 @@
 import random
 import asyncio
+from pyrogram import enums
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from TEAMZYRO import app, user_collection    # <-- IMPORTANT: using app
@@ -117,12 +118,12 @@ async def battle_cmd(client, message):
         ]
     ])
 
-    await message.reply(
+await message.reply(
         f"⚔️ <b>{user_name}</b> challenged <b>{opponent_name}</b> for <b>{bet_amount} coins</b>!\n\n"
         f"{opponent_name}, accept the battle?",
-        parse_mode="html",
+        parse_mode=enums.ParseMode.HTML,
         reply_markup=keyboard
-    )
+)
 
 
 # ============================
