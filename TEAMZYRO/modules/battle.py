@@ -1,10 +1,10 @@
 import random
 import asyncio
-from pyrogram import filters, enums
+from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from TEAMZYRO import app, user_collection   # APP instead of ZYRO
+from TEAMZYRO import app, user_collection
 
-# ----------- ASSETS -----------
+
 BATTLE_IMAGES = [
     "https://files.catbox.moe/1f6a2q.jpg",
     "https://files.catbox.moe/0o7nkl.jpg",
@@ -33,15 +33,16 @@ ATTACK_MOVES = [
 
 active_battles = {}
 
-# ----------- UTILS -----------
 
 def hp_bar(hp):
     seg = 10
     f = int((hp / 100) * seg)
     return "▰" * f + "▱" * (seg - f)
 
+
 async def ensure_user(uid, name):
-    if not await user_collection.find_one({"id": uid}):
+    user = await user_collection.find_one({"id": uid})
+    if not user:
         await user_collection.insert_one({
             "id": uid,
             "first_name": name,
@@ -51,32 +52,23 @@ async def ensure_user(uid, name):
         })
 
 
-# ----------- BATTLE COMMAND -----------
-
 @app.on_message(filters.command("battle"))
 async def battle_cmd(client, message):
 
-    if len(message.text.split()) != 2:
-        return await message.reply(
-            "⚔️ **Usage:**\nReply or Tag a user\n`/battle <amount>`"
-        )
+    parts = message.text.split()
 
-    bet_amount = message.text.split()[1]
+    if len(parts) != 2 or not parts[1].isdigit():
+        return await message.reply("⚔️ Reply or Tag user:\n`/battle <amount>`")
 
-    if not bet_amount.isdigit():
-        return await message.reply("❌ Bet must be a number.")
-
-    bet_amount = int(bet_amount)
+    bet_amount = int(parts[1])
 
     if bet_amount <= 0:
-        return await message.reply("❌ Bet must be > 0")
+        return await message.reply("❌ Bet must be a positive number.")
 
-    # --- Opponent Detection (TAG or REPLY only) ---
     opponent = None
 
     if message.reply_to_message:
         opponent = message.reply_to_message.from_user
-
     else:
         if message.entities:
             for ent in message.entities:
@@ -89,12 +81,12 @@ async def battle_cmd(client, message):
                     break
 
     if not opponent:
-        return await message.reply("❌ Tag or reply to the user you want to battle.")
+        return await message.reply("❌ Tag or reply to a user.")
 
     user = message.from_user
 
     if opponent.id == user.id:
-        return await message.reply("😂 You can't battle yourself!")
+        return await message.reply("😂 You can't battle yourself.")
 
     await ensure_user(user.id, user.first_name)
     await ensure_user(opponent.id, opponent.first_name)
@@ -111,7 +103,6 @@ async def battle_cmd(client, message):
     if user.id in active_battles or opponent.id in active_battles:
         return await message.reply("⛔ One of you is already in a battle.")
 
-    # --- Accept / Reject Buttons ---
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Accept", callback_data=f"battle_accept:{user.id}:{opponent.id}:{bet_amount}"),
@@ -120,13 +111,10 @@ async def battle_cmd(client, message):
     ])
 
     await message.reply(
-        f"⚔️ **{user.first_name}** has challenged **{opponent.first_name}** for **{bet_amount} coins**!\n"
-        f"\n{opponent.first_name}, do you accept?",
+        f"⚔️ **{user.first_name}** challenged **{opponent.first_name}** for **{bet_amount} coins**!",
         reply_markup=keyboard
     )
 
-
-# ----------- ACCEPT -----------
 
 @app.on_callback_query(filters.regex("battle_accept"))
 async def battle_accept(client, cq):
@@ -137,7 +125,7 @@ async def battle_accept(client, cq):
     bet = int(bet)
 
     if cq.from_user.id != opponent:
-        return await cq.answer("This is not for you!", show_alert=True)
+        return await cq.answer("Not for you!", show_alert=True)
 
     active_battles[challenger] = True
     active_battles[opponent] = True
@@ -154,7 +142,7 @@ async def battle_accept(client, cq):
 
     msg = await cq.message.reply_photo(
         random.choice(BATTLE_IMAGES),
-        caption=f"⚔️ **Battle Started!**\n\n{cdata['first_name']} vs {odata['first_name']}\nPot: **{bet * 2} coins**"
+        caption=f"⚔️ Battle Started!\n{cdata['first_name']} vs {odata['first_name']}\nPot: {bet * 2}"
     )
 
     while hpC > 0 and hpO > 0:
@@ -167,14 +155,14 @@ async def battle_accept(client, cq):
         if attacker == "c":
             hpO -= dmg
             if hpO < 0: hpO = 0
-            text = f"{cdata['first_name']} used {move[0]} and dealt **{dmg} damage!**"
+            text = f"{cdata['first_name']} used {move[0]} (-{dmg})"
         else:
             hpC -= dmg
             if hpC < 0: hpC = 0
-            text = f"{odata['first_name']} used {move[0]} and dealt **{dmg} damage!**"
+            text = f"{odata['first_name']} used {move[0]} (-{dmg})"
 
         await msg.edit_caption(
-            f"⚔️ **Turn {turn}**\n{text}\n\n"
+            f"⚔️ Turn {turn}\n{text}\n\n"
             f"{cdata['first_name']}: {hpC} {hp_bar(hpC)}\n"
             f"{odata['first_name']}: {hpO} {hp_bar(hpO)}"
         )
@@ -182,27 +170,25 @@ async def battle_accept(client, cq):
     if hpC > 0:
         winner = challenger
         loser = opponent
-        wname = cdata['first_name']
-        lname = odata['first_name']
+        wname = cdata["first_name"]
+        lname = odata["first_name"]
     else:
         winner = opponent
         loser = challenger
-        wname = odata['first_name']
-        lname = cdata['first_name']
+        wname = odata["first_name"]
+        lname = cdata["first_name"]
 
     pot = bet * 2
 
     await user_collection.update_one({"id": winner}, {"$inc": {"balance": pot, "wins": 1}})
     await user_collection.update_one({"id": loser}, {"$inc": {"losses": 1}})
 
-    await cq.message.reply_video(random.choice(WIN_VIDEOS), caption=f"🏆 **{wname} WON +{pot} coins!**")
-    await cq.message.reply_video(random.choice(LOSE_VIDEOS), caption=f"💀 **{lname} LOST**")
+    await cq.message.reply_video(random.choice(WIN_VIDEOS), caption=f"🏆 {wname} WON +{pot}!")
+    await cq.message.reply_video(random.choice(LOSE_VIDEOS), caption=f"💀 {lname} LOST")
 
     active_battles.pop(challenger, None)
     active_battles.pop(opponent, None)
 
-
-# ----------- REJECT -----------
 
 @app.on_callback_query(filters.regex("battle_reject"))
 async def battle_reject(client, cq):
