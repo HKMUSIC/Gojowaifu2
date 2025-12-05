@@ -1,35 +1,34 @@
 import asyncio
 import importlib
-from TEAMZYRO import ZYRO, application, LOGGER, send_start_message
+from TEAMZYRO import ZYRO, application, LOGGER
 from TEAMZYRO.modules import ALL_MODULES
-
+from TEAMZYRO.helpers import send_start_message_async   # <-- async version
 
 async def main():
+
     # Load all modules
     for module_name in ALL_MODULES:
-        importlib.import_module("TEAMZYRO.modules." + module_name)
+        importlib.import_module(f"TEAMZYRO.modules.{module_name}")
 
     LOGGER("TEAMZYRO.modules").info("All modules loaded successfully.")
 
-    # Start Pyrogram client
+    # -----------------------
+    # START PYROGRAM BOT
+    # -----------------------
     await ZYRO.start()
 
-    # -------------------------
-    # START PTB 20.6 BOT SAFELY
-    # -------------------------
-
-    # step 1: initialize (does not close loop)
+    # -----------------------
+    # START PTB (async)
+    # -----------------------
     await application.initialize()
-
-    # step 2: start bot (async)
     await application.start()
+    await application.updater.start_polling()  # SAFE in PTB 20.6
 
-    # step 3: start polling but NON-BLOCKING
-    asyncio.create_task(application.updater.start_polling())
-
-    # Send start message (optional)
+    # ------------------------
+    # SEND START MESSAGE SAFE
+    # ------------------------
     try:
-        send_start_message()
+        await send_start_message_async(ZYRO)
     except Exception as e:
         LOGGER("START").error(f"Start message error: {e}")
 
@@ -37,9 +36,7 @@ async def main():
         "╔═════ஜ۩۞۩ஜ════╗\n  BOT RUNNING SUCCESSFULLY \n╚═════ஜ۩۞۩ஜ════╝"
     )
 
-    # -------------------------------------
-    # Prevent Heroku dyno from stopping
-    # -------------------------------------
+    # Keep bot alive
     while True:
         await asyncio.sleep(5)
 
