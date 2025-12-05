@@ -1,4 +1,4 @@
-from TEAMZYRO import *
+from TEAMZYRO import app, user_collection, collection
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     InlineKeyboardMarkup,
