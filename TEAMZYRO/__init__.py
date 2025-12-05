@@ -33,8 +33,8 @@ def LOGGER(name: str) -> logging.Logger:
 #                ENV CONFIG (Your Style)
 # ====================================================
 
-API_ID = int(os.getenv("API_ID", "23343216"))
-API_HASH = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
+api_id = int(os.getenv("API_ID", "23343216"))
+api_hash = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
 TOKEN = os.getenv("TOKEN", "")
 
 GLOG = os.getenv("GLOG", "gojo_waifu")
