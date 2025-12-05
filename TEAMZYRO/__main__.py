@@ -11,19 +11,23 @@ from TEAMZYRO.modules import ALL_MODULES
 async def shutdown():
     LOGGER("TEAMZYRO").info("Shutting down cleanly...")
 
-    # Stop Aiogram
+    # --- Stop python-telegram-bot (PTB) ---
     try:
-        await application.shutdown()
+        await application.updater.stop()
+    except:
+        pass
+    try:
+        await application.stop()
     except:
         pass
 
-    # Stop Pyrogram
+    # --- Stop Pyrogram ---
     try:
         await ZYRO.stop()
     except:
         pass
 
-    # Cancel all asyncio tasks
+    # Cancel pending asyncio tasks
     current = asyncio.current_task()
     tasks = [t for t in asyncio.all_tasks() if t is not current]
 
@@ -36,26 +40,28 @@ async def shutdown():
 
 
 # ---------------------------------------------
-# MAIN APP
+# MAIN BOT STARTER
 # ---------------------------------------------
 async def start_bot():
-    # Import all modules
+    # Load modules
     for module_name in ALL_MODULES:
         importlib.import_module("TEAMZYRO.modules." + module_name)
 
     LOGGER("TEAMZYRO.modules").info("𝐀𝐥𝐥 𝐅𝐞𝐚𝐭𝐮𝐫𝐞𝐬 𝐋𝐨𝐚𝐝𝐞𝐝 𝐁𝐚𝐛𝐲🥳...")
 
-    # Start Pyrogram
+    # --- Start PYROGRAM ---
     await ZYRO.start()
 
-    # Start Aiogram
-    await application.start()
+    # --- PTB INITIALIZE FIRST ---
     await application.initialize()
 
-    LOGGER("TEAMZYRO").info("Both bots started successfully.")
+    # --- Then start PTB ---
+    await application.start()
 
-    # Run Aiogram polling FOREVER until stopped
-    await application.start_polling()
+    # --- Start polling (non-blocking) ---
+    await application.updater.start_polling()
+
+    LOGGER("TEAMZYRO").info("Both bots started successfully and polling...")
 
 
 # ---------------------------------------------
@@ -65,12 +71,12 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Gracefully handle Heroku stop signals
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
-        except:
-            pass
+    # Heroku SIGTERM/SIGINT shutdown handler
+    try:
+        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(shutdown()))
+        loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(shutdown()))
+    except:
+        pass
 
     try:
         loop.run_until_complete(start_bot())
