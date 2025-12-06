@@ -39,7 +39,7 @@ TOKEN = os.getenv("TOKEN", "")
 
 GLOG = os.getenv("GLOG", "gojo_waifu")
 CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "gojo_waifu")
-SUPPORT_CHAT_ID = int(os.getenv("SUPPORT_CHAT_ID", "0"))
+SUPPORT_CHAT_ID = int(os.getenv("SUPPORT_CHAT_ID", "-1002792716047"))
 
 mongo_url = os.getenv(
     "MONGO_URL",
