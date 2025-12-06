@@ -1,12 +1,20 @@
 import asyncio
 import importlib
+from TEAMZYRO import *
 from TEAMZYRO import ZYRO, application, LOGGER, send_start_message
 from TEAMZYRO.modules import ALL_MODULES
 
 
+async def run_ptb():
+    """Run PTB polling in its own loop without blocking Pyrogram."""
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()   # NON-BLOCKING POLLING
+
+
 async def main():
 
-    # Load all modules
+    # Load modules
     for module_name in ALL_MODULES:
         importlib.import_module("TEAMZYRO.modules." + module_name)
 
@@ -15,16 +23,12 @@ async def main():
     # Start Pyrogram bot
     await ZYRO.start()
 
-    # Start PTB (Telegram Bot API)
-    await application.initialize()
-    await application.start()
+    # Start PTB polling in separate task
+    asyncio.create_task(run_ptb())
 
-    # Start polling via built-in PTB function
-    asyncio.create_task(application.run_polling())
-
-    # Start message
+    # Send startup message
     try:
-        await send_start_message()     # FIX → add await
+        await send_start_message()
     except Exception as e:
         LOGGER("START").error(f"Failed to send start message: {e}")
 
