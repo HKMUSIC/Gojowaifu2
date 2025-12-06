@@ -1,15 +1,15 @@
 import asyncio
 import importlib
-from TEAMZYRO import *
 from TEAMZYRO import ZYRO, application, LOGGER, send_start_message
 from TEAMZYRO.modules import ALL_MODULES
 
 
-async def run_ptb():
-    """Run PTB polling in its own loop without blocking Pyrogram."""
+async def start_ptb():
+    """Runs PTB in a background task without blocking the event loop."""
     await application.initialize()
     await application.start()
-    await application.updater.start_polling()   # NON-BLOCKING POLLING
+    await application.updater.start_polling()
+    LOGGER("PTB").info("PTB polling started")
 
 
 async def main():
@@ -20,13 +20,14 @@ async def main():
 
     LOGGER("TEAMZYRO.modules").info("All modules loaded")
 
-    # Start Pyrogram bot
+    # Start Pyrogram
     await ZYRO.start()
+    LOGGER("PYROGRAM").info("Pyrogram started")
 
-    # Start PTB polling in separate task
-    asyncio.create_task(run_ptb())
+    # Start PTB in background
+    asyncio.create_task(start_ptb())
 
-    # Send startup message
+    # Send start message
     try:
         await send_start_message()
     except Exception as e:
@@ -34,9 +35,8 @@ async def main():
 
     LOGGER("TEAMZYRO").info("BOT RUNNING SUCCESSFULLY")
 
-    # Keep alive
-    while True:
-        await asyncio.sleep(5)
+    # Keep alive forever
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
