@@ -18,17 +18,19 @@ async def main():
     # Start PTB (Telegram Bot API)
     await application.initialize()
     await application.start()
-    asyncio.create_task(application.updater.start_polling())
+
+    # Start polling via built-in PTB function
+    asyncio.create_task(application.run_polling())
 
     # Start message
     try:
-        send_start_message()
+        await send_start_message()     # FIX → add await
     except Exception as e:
         LOGGER("START").error(f"Failed to send start message: {e}")
 
     LOGGER("TEAMZYRO").info("BOT RUNNING SUCCESSFULLY")
 
-    # Prevent exit forever
+    # Keep alive
     while True:
         await asyncio.sleep(5)
 
